@@ -1,6 +1,7 @@
 const Database =
     require("better-sqlite3");
 
+
 const config =
     require("./config");
 
@@ -16,7 +17,13 @@ db.pragma(
 );
 
 
+db.pragma(
+    "busy_timeout = 10000"
+);
+
+
 db.exec(`
+
     CREATE TABLE IF NOT EXISTS pages (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,22 +42,35 @@ db.exec(`
 
     );
 
+
     CREATE INDEX IF NOT EXISTS
     idx_pages_domain
 
     ON pages(domain);
 
+
     CREATE INDEX IF NOT EXISTS
     idx_pages_crawled_at
 
     ON pages(crawled_at);
+
+
+    CREATE INDEX IF NOT EXISTS
+    idx_pages_title
+
+    ON pages(title);
+
+
+    CREATE INDEX IF NOT EXISTS
+    idx_pages_url
+
+    ON pages(url);
+
 `);
 
 
-function savePage(page) {
-
-    const statement =
-        db.prepare(`
+const savePageStatement =
+    db.prepare(`
 
         INSERT INTO pages (
 
@@ -106,38 +126,79 @@ function savePage(page) {
     `);
 
 
-    statement.run({
+function savePage(
+    page
+) {
+
+    if (
+        !page ||
+        !page.url
+    ) {
+
+        return false;
+
+    }
+
+
+    savePageStatement.run({
 
         url:
             page.url,
+
 
         title:
             page.title ||
             "Untitled page",
 
+
         description:
             page.description ||
             "",
+
 
         content:
             page.content ||
             "",
 
+
         domain:
-            page.domain,
+            page.domain ||
+            "",
+
 
         crawled_at:
             Date.now()
 
     });
+
+
+    return true;
+
 }
 
 
 function searchPages(
     query,
-    limit = 10,
-    offset = 0
+
+    limit =
+        config.search
+            .resultsPerPage,
+
+    offset =
+        0
+
 ) {
+
+
+    if (
+        typeof query !==
+        "string"
+    ) {
+
+        return [];
+
+    }
+
 
     const words =
         query
@@ -149,43 +210,62 @@ function searchPages(
                 " "
             )
 
-            .split(/\s+/)
+            .split(
+                /\s+/
+            )
 
-            .filter(Boolean)
+            .filter(
+                Boolean
+            )
 
-            .slice(0, 12);
+            .slice(
+                0,
+                20
+            );
 
 
     if (
-        words.length === 0
+        words.length ===
+        0
     ) {
 
         return [];
+
     }
+
+
+    const phrase =
+        words.join(
+            " "
+        );
+
+
+    const phrasePattern =
+        `%${phrase}%`;
 
 
     const conditions =
         words.map(
             () => `
 
-            (
+                (
 
-                LOWER(title)
-                LIKE ?
+                    LOWER(title)
+                    LIKE ?
 
-                OR
+                    OR
 
-                LOWER(description)
-                LIKE ?
+                    LOWER(description)
+                    LIKE ?
 
-                OR
+                    OR
 
-                LOWER(content)
-                LIKE ?
+                    LOWER(content)
+                    LIKE ?
 
-            )
+                )
 
-        `
+            `
         );
 
 
@@ -193,51 +273,55 @@ function searchPages(
         words.map(
             () => `
 
-            (
+                (
 
-                CASE
+                    CASE
 
-                    WHEN
-                    LOWER(title)
-                    LIKE ?
+                        WHEN
+                        LOWER(title)
+                        LIKE ?
 
-                    THEN 100
+                        THEN 100
 
-                    ELSE 0
+                        ELSE 0
 
-                END
+                    END
 
-                +
 
-                CASE
+                    +
 
-                    WHEN
-                    LOWER(description)
-                    LIKE ?
 
-                    THEN 30
+                    CASE
 
-                    ELSE 0
+                        WHEN
+                        LOWER(description)
+                        LIKE ?
 
-                END
+                        THEN 35
 
-                +
+                        ELSE 0
 
-                CASE
+                    END
 
-                    WHEN
-                    LOWER(content)
-                    LIKE ?
 
-                    THEN 10
+                    +
 
-                    ELSE 0
 
-                END
+                    CASE
 
-            )
+                        WHEN
+                        LOWER(content)
+                        LIKE ?
 
-        `
+                        THEN 10
+
+                        ELSE 0
+
+                    END
+
+                )
+
+            `
         );
 
 
@@ -257,23 +341,89 @@ function searchPages(
 
             crawled_at,
 
+
             (
 
-                ${scoreParts.join(" + ")}
+                CASE
+
+                    WHEN
+                    LOWER(title)
+                    LIKE ?
+
+                    THEN 300
+
+                    ELSE 0
+
+                END
+
+
+                +
+
+
+                CASE
+
+                    WHEN
+                    LOWER(description)
+                    LIKE ?
+
+                    THEN 100
+
+                    ELSE 0
+
+                END
+
+
+                +
+
+
+                ${scoreParts.join(
+                    " + "
+                )}
 
             ) AS relevance
 
+
         FROM pages
+
 
         WHERE
 
-            ${conditions.join(" OR ")}
+            (
+
+                LOWER(title)
+                LIKE ?
+
+
+                OR
+
+
+                LOWER(description)
+                LIKE ?
+
+
+                OR
+
+
+                LOWER(content)
+                LIKE ?
+
+            )
+
+
+            OR
+
+
+            ${conditions.join(
+                " OR "
+            )}
+
 
         ORDER BY
 
             relevance DESC,
 
             crawled_at DESC
+
 
         LIMIT ?
 
@@ -285,6 +435,23 @@ function searchPages(
     const parameters =
         [];
 
+
+    /*
+        Exact phrase scoring.
+    */
+
+    parameters.push(
+
+        phrasePattern,
+
+        phrasePattern
+
+    );
+
+
+    /*
+        Per-word relevance scoring.
+    */
 
     for (
         const word
@@ -307,6 +474,27 @@ function searchPages(
 
     }
 
+
+    /*
+        Exact phrase matching
+        in the WHERE clause.
+    */
+
+    parameters.push(
+
+        phrasePattern,
+
+        phrasePattern,
+
+        phrasePattern
+
+    );
+
+
+    /*
+        Individual word matching
+        in the WHERE clause.
+    */
 
     for (
         const word
@@ -331,14 +519,33 @@ function searchPages(
 
 
     parameters.push(
-        limit,
-        offset
+
+        Math.max(
+            1,
+            Math.min(
+                Number(
+                    limit
+                ) || 10,
+                100
+            )
+        ),
+
+
+        Math.max(
+            0,
+            Number(
+                offset
+            ) || 0
+        )
+
     );
 
 
     return db
 
-        .prepare(sql)
+        .prepare(
+            sql
+        )
 
         .all(
             ...parameters
@@ -372,7 +579,13 @@ function getStats() {
 
 function close() {
 
-    db.close();
+    if (
+        db.open
+    ) {
+
+        db.close();
+
+    }
 
 }
 
