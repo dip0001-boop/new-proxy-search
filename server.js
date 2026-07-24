@@ -7,7 +7,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+
+// Serve index.html, style.css, and script.js
+// directly from the root folder
+app.use(express.static(__dirname));
 
 app.get("/api/search", async (req, res) => {
     try {
@@ -32,7 +35,7 @@ app.get("/api/search", async (req, res) => {
         );
 
         if (!response.ok) {
-            throw new Error(`Search failed: ${response.status}`);
+            throw new Error(`Search request failed with status ${response.status}`);
         }
 
         const html = await response.text();
@@ -41,7 +44,9 @@ app.get("/api/search", async (req, res) => {
         const results = [];
 
         $(".result").each((index, element) => {
-            if (results.length >= 20) return;
+            if (results.length >= 20) {
+                return;
+            }
 
             const titleElement = $(element).find(".result__a");
             const snippetElement = $(element).find(".result__snippet");
@@ -53,7 +58,9 @@ app.get("/api/search", async (req, res) => {
 
             let link = titleElement.attr("href");
 
-            if (!title || !link) return;
+            if (!title || !link) {
+                return;
+            }
 
             if (link.startsWith("//")) {
                 link = "https:" + link;
@@ -84,8 +91,9 @@ app.get("/api/search", async (req, res) => {
     }
 });
 
+// Always serve index.html for normal page requests
 app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
+    res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, () => {
