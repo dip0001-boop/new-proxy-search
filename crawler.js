@@ -2,11 +2,12 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const robotsParser = require("robots-parser");
 
-const database = require("./database");
+const database =
+    require("./database");
 
 
 const USER_AGENT =
-    "TheVaultSearchBot/1.0 (+search project crawler)";
+    "TheVaultSearchBot/1.0";
 
 
 const MAX_PAGE_SIZE =
@@ -14,203 +15,382 @@ const MAX_PAGE_SIZE =
 
 
 const REQUEST_DELAY =
-    1500;
+    1200;
 
 
 const MAX_PAGES_PER_RUN =
     100;
 
 
+const queue =
+    [];
+
+
+const queued =
+    new Set();
+
+
+const visited =
+    new Set();
+
+
+const robotsCache =
+    new Map();
+
+
 const seeds = [
 
     "https://en.wikipedia.org/wiki/Main_Page",
 
+    "https://developer.mozilla.org/en-US/",
+
     "https://www.mozilla.org/en-US/",
 
-    "https://developer.mozilla.org/en-US/",
+    "https://www.w3.org/",
 
     "https://www.nasa.gov/",
 
     "https://www.bbc.com/",
 
-    "https://www.theguardian.com/international",
-
-    "https://www.w3.org/"
+    "https://www.theguardian.com/international"
 
 ];
 
 
-const queue = [];
-
-const queued = new Set();
-
-const visited = new Set();
-
-const robotsCache = new Map();
-
-
-function addToQueue(url) {
+function normalizeUrl(
+    rawUrl
+) {
 
     try {
 
-        const parsed =
-            new URL(url);
+        const url =
+            new URL(
+                rawUrl
+            );
 
 
         if (
-            parsed.protocol !==
+
+            url.protocol !==
                 "http:" &&
 
-            parsed.protocol !==
+            url.protocol !==
                 "https:"
+
         ) {
-            return;
+
+            return null;
         }
 
 
-        parsed.hash = "";
+        url.hash =
+            "";
 
 
-        const normalized =
-            parsed.toString();
+        url.hostname =
+            url.hostname
+                .toLowerCase();
 
 
         if (
-            !queued.has(normalized) &&
-            !visited.has(normalized)
+
+            url.pathname.length >
+            1 &&
+
+            url.pathname.endsWith(
+                "/"
+            )
+
         ) {
 
-            queued.add(normalized);
-
-            queue.push(normalized);
+            url.pathname =
+                url.pathname.slice(
+                    0,
+                    -1
+                );
         }
 
+
+        return url.toString();
+
+
     } catch {
-        // Ignore invalid URLs
+
+        return null;
     }
 }
 
 
-function getDomain(url) {
+function addToQueue(
+    rawUrl
+) {
 
-    return new URL(url).hostname;
+    const url =
+        normalizeUrl(
+            rawUrl
+        );
+
+
+    if (
+        !url
+    ) {
+
+        return;
+    }
+
+
+    if (
+
+        !queued.has(
+            url
+        ) &&
+
+        !visited.has(
+            url
+        )
+
+    ) {
+
+        queued.add(
+            url
+        );
+
+        queue.push(
+            url
+        );
+    }
 }
 
 
-async function canCrawl(url) {
+function getRobotsUrl(
+    url
+) {
 
     const parsed =
-        new URL(url);
+        new URL(
+            url
+        );
+
+
+    return (
+
+        `${parsed.protocol}//` +
+
+        `${parsed.host}` +
+
+        "/robots.txt"
+
+    );
+}
+
+
+async function canCrawl(
+    url
+) {
+
+    const parsed =
+        new URL(
+            url
+        );
+
 
     const origin =
         parsed.origin;
 
 
     if (
-        !robotsCache.has(origin)
+        !robotsCache.has(
+            origin
+        )
     ) {
 
         try {
 
             const robotsUrl =
-                `${origin}/robots.txt`;
+                getRobotsUrl(
+                    url
+                );
 
 
             const response =
                 await axios.get(
+
                     robotsUrl,
+
                     {
-                        timeout: 8000,
+
+                        timeout:
+                            8000,
 
                         headers: {
+
                             "User-Agent":
                                 USER_AGENT
+
                         },
 
                         validateStatus:
                             status =>
+
                                 status >= 200 &&
+
                                 status < 500
+
                     }
+
                 );
 
 
             const robots =
                 robotsParser(
+
                     robotsUrl,
+
                     response.status === 200
+
                         ? response.data
+
                         : ""
+
                 );
 
 
             robotsCache.set(
+
                 origin,
+
                 robots
+
             );
+
 
         } catch {
 
             robotsCache.set(
+
                 origin,
+
                 null
+
             );
         }
     }
 
 
     const robots =
-        robotsCache.get(origin);
+        robotsCache.get(
+            origin
+        );
 
 
-    if (!robots) {
+    if (
+        !robots
+    ) {
+
         return true;
     }
 
 
-    return robots.isAllowed(
-        url,
-        USER_AGENT
-    ) !== false;
+    return (
+
+        robots.isAllowed(
+
+            url,
+
+            USER_AGENT
+
+        ) !== false
+
+    );
 }
 
 
-function cleanText(text) {
+function cleanText(
+    text
+) {
 
     return text
-        .replace(/\s+/g, " ")
+
+        .replace(
+            /\s+/g,
+            " "
+        )
+
         .trim()
-        .slice(0, 100000);
+
+        .slice(
+            0,
+            100000
+        );
 }
 
 
-function extractPage(html, url) {
+function extractPage(
+    html,
+    url
+) {
 
     const $ =
-        cheerio.load(html);
+        cheerio.load(
+            html
+        );
 
 
     $(
-        "script, style, noscript, svg, iframe, nav, footer"
+
+        "script," +
+
+        "style," +
+
+        "noscript," +
+
+        "svg," +
+
+        "iframe," +
+
+        "nav," +
+
+        "footer," +
+
+        "header"
+
     ).remove();
 
 
     const title =
         $("title")
+
             .first()
+
             .text()
+
             .trim();
 
 
     const description =
+
         $('meta[name="description"]')
-            .attr("content") ||
+
+            .attr(
+                "content"
+            ) ||
+
+        $('meta[property="og:description"]')
+
+            .attr(
+                "content"
+            ) ||
+
         "";
 
 
     const content =
         cleanText(
-            $("body").text()
+
+            $("body")
+
+                .text()
+
         );
 
 
@@ -218,50 +398,56 @@ function extractPage(html, url) {
         [];
 
 
-    $("a[href]").each(
-        (_, element) => {
+    $("a[href]")
 
-            const href =
-                $(element).attr("href");
+        .each(
 
+            (_, element) => {
 
-            try {
+                const href =
+                    $(element)
+
+                        .attr(
+                            "href"
+                        );
+
 
                 const absolute =
-                    new URL(
-                        href,
-                        url
+                    normalizeUrl(
+
+                        new URL(
+
+                            href,
+
+                            url
+
+                        ).toString()
+
                     );
-
-
-                absolute.hash = "";
 
 
                 if (
-                    absolute.protocol ===
-                        "http:" ||
-
-                    absolute.protocol ===
-                        "https:"
+                    absolute
                 ) {
 
                     links.push(
-                        absolute.toString()
+                        absolute
                     );
                 }
 
-            } catch {
-                // Ignore invalid links
             }
-        }
-    );
+
+        );
 
 
     return {
 
         title:
+
             title ||
+
             "Untitled page",
+
 
         description:
 
@@ -269,36 +455,47 @@ function extractPage(html, url) {
                 description
             ),
 
+
         content,
 
+
         links
+
     };
 }
 
 
-async function crawlPage(url) {
+async function crawlPage(
+    url
+) {
 
     if (
-        visited.has(url)
+        visited.has(
+            url
+        )
     ) {
-        return;
+
+        return false;
     }
 
 
-    visited.add(url);
+    visited.add(
+        url
+    );
 
 
-    const allowed =
-        await canCrawl(url);
-
-
-    if (!allowed) {
+    if (
+        !await canCrawl(
+            url
+        )
+    ) {
 
         console.log(
             `ROBOTS BLOCKED: ${url}`
         );
 
-        return;
+
+        return false;
     }
 
 
@@ -311,9 +508,13 @@ async function crawlPage(url) {
 
         const response =
             await axios.get(
+
                 url,
+
                 {
-                    timeout: 15000,
+
+                    timeout:
+                        15000,
 
                     maxContentLength:
                         MAX_PAGE_SIZE,
@@ -325,49 +526,79 @@ async function crawlPage(url) {
                         "text",
 
                     headers: {
+
                         "User-Agent":
                             USER_AGENT,
 
                         "Accept":
-                            "text/html,application/xhtml+xml"
+
+                            "text/html," +
+
+                            "application/xhtml+xml"
+
                     },
 
                     validateStatus:
+
                         status =>
+
                             status >= 200 &&
+
                             status < 300
+
                 }
+
             );
 
 
         const contentType =
+
             response.headers[
+
                 "content-type"
+
             ] || "";
 
 
         if (
+
             !contentType.includes(
+
                 "text/html"
+
             )
+
         ) {
-            return;
+
+            return false;
         }
 
 
         const page =
             extractPage(
+
                 response.data,
+
                 url
+
             );
 
 
         if (
+
             page.content.length <
             50
+
         ) {
-            return;
+
+            return false;
         }
+
+
+        const domain =
+            new URL(
+                url
+            ).hostname;
 
 
         database.savePage({
@@ -383,14 +614,17 @@ async function crawlPage(url) {
             content:
                 page.content,
 
-            domain:
-                getDomain(url)
+            domain
+
         });
 
 
         for (
+
             const link
+
             of page.links
+
         ) {
 
             addToQueue(
@@ -404,11 +638,23 @@ async function crawlPage(url) {
         );
 
 
-    } catch (error) {
+        return true;
+
+
+    } catch (
+        error
+    ) {
 
         console.log(
-            `FAILED: ${url} - ${error.message}`
+
+            `FAILED: ${url} - ` +
+
+            error.message
+
         );
+
+
+        return false;
     }
 }
 
@@ -416,8 +662,11 @@ async function crawlPage(url) {
 async function startCrawler() {
 
     for (
+
         const seed
+
         of seeds
+
     ) {
 
         addToQueue(
@@ -426,13 +675,17 @@ async function startCrawler() {
     }
 
 
-    let crawled =
+    let processed =
         0;
 
 
     while (
+
         queue.length > 0 &&
-        crawled < MAX_PAGES_PER_RUN
+
+        processed <
+        MAX_PAGES_PER_RUN
+
     ) {
 
         const url =
@@ -444,25 +697,39 @@ async function startCrawler() {
         );
 
 
-        crawled++;
+        processed++;
 
 
         await new Promise(
+
             resolve =>
+
                 setTimeout(
+
                     resolve,
+
                     REQUEST_DELAY
+
                 )
+
         );
+
     }
 
 
     console.log(
-        `CRAWLER FINISHED: ${crawled} pages processed`
+
+        `CRAWLER FINISHED: ` +
+
+        `${processed} pages processed`
+
     );
+
 }
 
 
 module.exports = {
+
     startCrawler
+
 };
