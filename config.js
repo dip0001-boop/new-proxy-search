@@ -1,9 +1,7 @@
-const path =
-    require("path");
+const path = require("path");
 
 
 const config = {
-
 
     port:
         process.env.PORT ||
@@ -12,7 +10,6 @@ const config = {
 
     databasePath:
         process.env.DATABASE_PATH ||
-
         path.join(
             __dirname,
             "vault-search.db"
@@ -22,96 +19,37 @@ const config = {
     search: {
 
         cacheTime:
-            300,
-
+            120,
 
         resultsPerPage:
             10,
 
+        maxResults:
+            50,
 
-        maxQueryLength:
-            300
+        requestTimeout:
+            15000,
+
+        maxResponseSize:
+            5 *
+            1024 *
+            1024
 
     },
 
 
-    crawler: {
+    proxy: {
 
+        requestTimeout:
+            30000,
 
-        /*
-            Maximum number of pages
-            processed in one crawler run.
-        */
-
-        maxPagesPerRun:
-            100,
-
-
-        /*
-            Delay after each page
-            processed by a worker.
-
-            With 15 workers, this still
-            prevents each worker from
-            hammering websites continuously.
-        */
-
-        requestDelay:
-            1200,
-
-
-        /*
-            Maximum response size.
-
-            500 MB is intentionally very
-            high for HTML pages.
-
-            This is used by Axios as both
-            maxContentLength and
-            maxBodyLength.
-        */
-
-        maxPageSize:
-            500 *
+        maxResponseSize:
+            50 *
             1024 *
             1024,
 
-
-        /*
-            Number of simultaneous crawler
-            workers.
-        */
-
-        workerCount:
-            15,
-
-
-        /*
-            Maximum number of times a URL
-            can fail before being permanently
-            marked as failed.
-        */
-
-        maxAttempts:
-            3,
-
-
-        /*
-            Maximum time allowed for a
-            page request.
-        */
-
-        requestTimeout:
-            20000,
-
-
-        /*
-            Maximum amount of extracted
-            text saved from one page.
-        */
-
-        maxTextLength:
-            100000
+        maxRedirects:
+            10
 
     },
 
@@ -130,9 +68,8 @@ const config = {
             60 *
             1000,
 
-
         maxRequests:
-            60
+            120
 
     }
 
