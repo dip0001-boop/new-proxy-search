@@ -2,21 +2,28 @@ const config = {
     port: process.env.PORT || 3000,
 
     search: {
+        timeout: 15000,
+
         maxResults: 20,
-        timeout: 10000,
+
         cacheTime: 300,
 
-        userAgent:
-            "THE-VAULT-SEARCH/1.0"
+        defaultCountry: "AU",
+
+        defaultLanguage: "en",
+
+        safeSearch: "moderate"
     },
 
     security: {
         maxQueryLength: 300,
+
         minQueryLength: 1
     },
 
     rateLimit: {
         windowMs: 60 * 1000,
+
         maxRequests: 60
     }
 };
