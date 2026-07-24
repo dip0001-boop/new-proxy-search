@@ -1,31 +1,40 @@
-const timestamp = () => {
+function timestamp() {
     return new Date().toISOString();
-};
+}
 
-function info(message, data = null) {
+function info(message) {
     console.log(
-        `[${timestamp()}] [INFO] ${message}`,
-        data || ""
+        `[${timestamp()}] INFO: ${message}`
     );
 }
 
-function warn(message, data = null) {
+function warn(message) {
     console.warn(
-        `[${timestamp()}] [WARN] ${message}`,
-        data || ""
+        `[${timestamp()}] WARN: ${message}`
     );
 }
 
 function error(message, err = null) {
     console.error(
-        `[${timestamp()}] [ERROR] ${message}`,
-        err?.stack || err || ""
+        `[${timestamp()}] ERROR: ${message}`
     );
+
+    if (err) {
+        console.error(err);
+    }
 }
 
-function request(method, url, status, duration) {
+function request(
+    method,
+    url,
+    status,
+    time
+) {
     console.log(
-        `[${timestamp()}] [REQUEST] ${method} ${url} → ${status} (${duration}ms)`
+        `[${timestamp()}] ` +
+        `${method} ${url} ` +
+        `${status} ` +
+        `${time}ms`
     );
 }
 
