@@ -2,9 +2,80 @@ const database =
     require("./database");
 
 
+function cleanText(
+    value
+) {
+
+    return String(
+        value || ""
+    )
+
+        .replace(
+            /\s+/g,
+            " "
+        )
+
+        .trim();
+
+}
+
+
+function createSnippet(
+    result
+) {
+
+    const description =
+        cleanText(
+            result.description
+        );
+
+
+    if (
+        description
+    ) {
+
+        return description
+            .slice(
+                0,
+                320
+            );
+
+    }
+
+
+    const content =
+        cleanText(
+            result.content
+        );
+
+
+    if (
+        content
+    ) {
+
+        return content
+            .slice(
+                0,
+                320
+            );
+
+    }
+
+
+    return (
+
+        "No description available."
+
+    );
+
+}
+
+
 function search(
     query,
+
     options = {}
+
 ) {
 
     const limit =
@@ -38,7 +109,14 @@ function search(
 
 
     const offset =
-        (page - 1) *
+        (
+
+            page -
+
+            1
+
+        ) *
+
         limit;
 
 
@@ -57,45 +135,70 @@ function search(
     return {
 
         provider:
+
             "THE VAULT INDEX",
+
 
         results:
 
             results.map(
+
                 result => ({
 
                     title:
-                        result.title,
+
+                        cleanText(
+
+                            result.title
+
+                        ) ||
+
+                        "Untitled page",
+
 
                     link:
+
                         result.url,
+
 
                     snippet:
 
-                        result.description ||
+                        createSnippet(
 
-                        result.content
-                            ?.slice(
-                                0,
-                                300
-                            ) ||
+                            result
 
-                        "No description available.",
+                        ),
+
 
                     source:
-                        result.domain,
+
+                        cleanText(
+
+                            result.domain
+
+                        ),
+
 
                     relevance:
-                        result.relevance,
+
+                        Number(
+
+                            result.relevance
+
+                        ) || 0,
+
 
                     crawledAt:
+
                         result.crawled_at
 
                 })
 
             ),
 
+
         total:
+
             results.length
 
     };
