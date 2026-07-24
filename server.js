@@ -1,112 +1,162 @@
 const express = require("express");
 const path = require("path");
-const fetch = require("node-fetch");
-const cheerio = require("cheerio");
+const compression = require("compression");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+
+const config = require("./config");
+const logger = require("./logger");
+const cache = require("./cache");
+const searchProviders = require("./searchProviders");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(helmet({
+    contentSecurityPolicy: false
+}));
+
+app.use(cors());
+
+app.use(compression());
+
+app.use(express.json({
+    limit: "1mb"
+}));
+
 app.use(express.static(__dirname));
 
+const limiter = rateLimit({
+    windowMs: config.rateLimit.windowMs,
+    max: config.rateLimit.maxRequests,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+app.use("/api/", limiter);
+
+
+// Health check for Render
+app.get("/health", (req, res) => {
+    res.json({
+        status: "online",
+        service: "THE VAULT SEARCH"
+    });
+});
+
+
+// Search API
 app.get("/api/search", async (req, res) => {
+
+    const start = Date.now();
+
     try {
-        const query = req.query.q;
 
-        if (!query || !query.trim()) {
+        let query = req.query.q;
+
+        if (!query) {
             return res.status(400).json({
-                error: "Search query is required"
+                error: "Missing search query"
             });
         }
 
-        const startTime = Date.now();
+        query = query.trim();
 
-        const searchURL =
-            "https://html.duckduckgo.com/html/?q=" +
-            encodeURIComponent(query);
 
-        const response = await fetch(searchURL, {
-            headers: {
-                "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                "Accept":
-                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9"
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(
-                `DuckDuckGo returned status ${response.status}`
-            );
+        if (
+            query.length < config.security.minQueryLength ||
+            query.length > config.security.maxQueryLength
+        ) {
+            return res.status(400).json({
+                error: "Invalid search length"
+            });
         }
 
-        const html = await response.text();
-        const $ = cheerio.load(html);
 
-        const results = [];
+        const cached = cache.get(query);
 
-        $(".result").each((index, element) => {
-            if (results.length >= 20) return;
+        if (cached) {
 
-            const titleElement = $(element).find(
-                ".result__title a, .result__a"
+            logger.request(
+                "GET",
+                `/api/search?q=${query}`,
+                200,
+                Date.now() - start
             );
 
-            const snippetElement = $(element).find(
-                ".result__snippet"
-            );
-
-            const urlElement = $(element).find(
-                ".result__url"
-            );
-
-            const title = titleElement.text().trim();
-            const snippet = snippetElement.text().trim();
-
-            let link = titleElement.attr("href") || "";
-
-            let url = urlElement.text().trim();
-
-            if (!title || !link) return;
-
-            if (link.startsWith("//")) {
-                link = "https:" + link;
-            }
-
-            results.push({
-                title,
-                link,
-                url,
-                snippet
+            return res.json({
+                ...cached,
+                cached: true
             });
-        });
+        }
 
-        console.log(
-            `Search: "${query}" | Results found: ${results.length}`
+
+        const search =
+            await searchProviders.search(query);
+
+
+        const response = {
+            query,
+            provider: search.provider,
+            results: search.results,
+            count: search.results.length,
+            time: Date.now() - start
+        };
+
+
+        cache.set(
+            query,
+            response
         );
 
-        res.json({
-            query,
-            results,
-            resultCount: results.length,
-            searchTime: Date.now() - startTime
-        });
+
+        logger.request(
+            "GET",
+            `/api/search?q=${query}`,
+            200,
+            Date.now() - start
+        );
+
+
+        res.json(response);
+
 
     } catch (error) {
-        console.error("Search error:", error);
+
+        logger.error(
+            "Search request failed",
+            error
+        );
+
 
         res.status(500).json({
-            error: "Search failed",
-            message: error.message
+            error: "Search service unavailable"
         });
     }
 });
 
+
+// Serve website
 app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
+
+    res.sendFile(
+        path.join(
+            __dirname,
+            "index.html"
+        )
+    );
+
 });
 
-app.listen(PORT, () => {
-    console.log(`THE VAULT SEARCH running on port ${PORT}`);
-});
+
+// Start server
+app.listen(
+    config.port,
+    () => {
+
+        logger.info(
+            `THE VAULT SEARCH running on port ${config.port}`
+        );
+
+    }
+);
