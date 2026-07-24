@@ -1,1 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
 
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>THE VAULT SEARCH</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header class="topbar">
+
+        <div class="brand">
+            <span class="brand-icon">◆</span>
+            <span>THE VAULT</span>
+            <small>SEARCH</small>
+        </div>
+
+        <div class="status">
+            <span class="status-dot"></span>
+            ONLINE
+        </div>
+
+    </header>
+
+    <main>
+
+        <section class="hero">
+
+            <div class="hero-logo">
+                <div class="vault-symbol">◆</div>
+                <h1>THE VAULT</h1>
+                <p>SEARCH THE WEB</p>
+            </div>
+
+            <form id="searchForm" class="search-box">
+
+                <span class="search-icon">⌕</span>
+
+                <input
+                    id="searchInput"
+                    type="text"
+                    placeholder="Search the web..."
+                    autocomplete="off"
+                    autofocus
+                >
+
+                <button type="submit">
+                    SEARCH
+                </button>
+
+            </form>
+
+            <div class="quick-links">
+                <button onclick="quickSearch('games')">Games</button>
+                <button onclick="quickSearch('technology')">Technology</button>
+                <button onclick="quickSearch('news')">News</button>
+                <button onclick="quickSearch('music')">Music</button>
+            </div>
+
+        </section>
+
+        <section id="resultsSection" class="results-section hidden">
+
+            <div class="results-header">
+
+                <div>
+                    <h2 id="resultsTitle">Search Results</h2>
+                    <p id="resultsInfo"></p>
+                </div>
+
+                <button id="newSearchButton">
+                    NEW SEARCH
+                </button>
+
+            </div>
+
+            <div id="loading" class="loading hidden">
+                <div class="loading-spinner"></div>
+                <span>SEARCHING THE WEB...</span>
+            </div>
+
+            <div id="results"></div>
+
+            <div id="noResults" class="no-results hidden">
+                <div class="empty-icon">⌕</div>
+                <h2>No results found</h2>
+                <p>Try searching for something else.</p>
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer>
+        <span>THE VAULT SEARCH</span>
+        <span>SECURE SEARCH INTERFACE</span>
+    </footer>
+
+    <script src="script.js"></script>
+
+</body>
+
+</html>
