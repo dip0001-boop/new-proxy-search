@@ -1,14 +1,110 @@
-const searchInput = document.getElementById("searchInput");
-const searchButton = document.getElementById("searchButton");
-const resultsContainer = document.getElementById("results");
-const statusElement = document.getElementById("status");
+const searchForm =
+    document.getElementById(
+        "searchForm"
+    );
+
+const searchInput =
+    document.getElementById(
+        "searchInput"
+    );
+
+const clearButton =
+    document.getElementById(
+        "clearButton"
+    );
+
+const homeSection =
+    document.getElementById(
+        "homeSection"
+    );
+
+const resultsSection =
+    document.getElementById(
+        "resultsSection"
+    );
+
+const resultsTitle =
+    document.getElementById(
+        "resultsTitle"
+    );
+
+const resultsMeta =
+    document.getElementById(
+        "resultsMeta"
+    );
+
+const loadingState =
+    document.getElementById(
+        "loadingState"
+    );
+
+const errorState =
+    document.getElementById(
+        "errorState"
+    );
+
+const errorMessage =
+    document.getElementById(
+        "errorMessage"
+    );
+
+const emptyState =
+    document.getElementById(
+        "emptyState"
+    );
+
+const resultsContainer =
+    document.getElementById(
+        "resultsContainer"
+    );
+
+const pagination =
+    document.getElementById(
+        "pagination"
+    );
+
+const previousPage =
+    document.getElementById(
+        "previousPage"
+    );
+
+const nextPage =
+    document.getElementById(
+        "nextPage"
+    );
+
+const pageNumber =
+    document.getElementById(
+        "pageNumber"
+    );
+
+const newSearchButton =
+    document.getElementById(
+        "newSearchButton"
+    );
+
+const retryButton =
+    document.getElementById(
+        "retryButton"
+    );
+
+const quickSearchButtons =
+    document.querySelectorAll(
+        "[data-query]"
+    );
+
+
+let currentQuery = "";
 
 let currentPage = 1;
-let currentQuery = "";
+
+let lastSearchURL = "";
+
 
 function getDisplayURL(url) {
     try {
-        const parsed = new URL(url);
+        const parsed =
+            new URL(url);
 
         return (
             parsed.hostname +
@@ -20,9 +116,12 @@ function getDisplayURL(url) {
     }
 }
 
+
 function escapeHTML(value) {
     const div =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
 
     div.textContent =
         value || "";
@@ -30,29 +129,44 @@ function escapeHTML(value) {
     return div.innerHTML;
 }
 
-function showStatus(message) {
-    if (statusElement) {
-        statusElement.textContent =
-            message;
-    }
+
+function show(element) {
+    element.classList.remove(
+        "hidden"
+    );
 }
 
-function renderResults(data) {
-    if (!resultsContainer) {
-        return;
-    }
 
-    resultsContainer.innerHTML = "";
+function hide(element) {
+    element.classList.add(
+        "hidden"
+    );
+}
+
+
+function resetStates() {
+    hide(loadingState);
+    hide(errorState);
+    hide(emptyState);
+    hide(pagination);
+
+    resultsContainer.innerHTML =
+        "";
+}
+
+
+function displayResults(data) {
+    resultsContainer.innerHTML =
+        "";
 
     if (
         !data.results ||
         data.results.length === 0
     ) {
-        resultsContainer.innerHTML = `
-            <div class="no-results">
-                No results found.
-            </div>
-        `;
+        show(emptyState);
+
+        resultsMeta.textContent =
+            "No results found";
 
         return;
     }
@@ -61,53 +175,89 @@ function renderResults(data) {
         const result
         of data.results
     ) {
-        const resultElement =
-            document.createElement("article");
+        const article =
+            document.createElement(
+                "article"
+            );
 
-        resultElement.className =
+        article.className =
             "search-result";
 
-        resultElement.innerHTML = `
+        const safeURL =
+            escapeHTML(
+                result.link
+            );
+
+        const displayURL =
+            escapeHTML(
+                getDisplayURL(
+                    result.link
+                )
+            );
+
+        const title =
+            escapeHTML(
+                result.title ||
+                "Untitled page"
+            );
+
+        const snippet =
+            escapeHTML(
+                result.snippet ||
+                "No description available."
+            );
+
+        article.innerHTML = `
             <div class="result-url">
-                ${escapeHTML(
-                    getDisplayURL(
-                        result.link
-                    )
-                )}
+                ${displayURL}
             </div>
 
-            <h2>
+            <h3>
                 <a
-                    href="${escapeHTML(
-                        result.link
-                    )}"
+                    href="${safeURL}"
                     target="_blank"
                     rel="noopener noreferrer"
                 >
-                    ${escapeHTML(
-                        result.title
-                    )}
+                    ${title}
                 </a>
-            </h2>
+            </h3>
 
             <p>
-                ${escapeHTML(
-                    result.snippet
-                )}
+                ${snippet}
             </p>
         `;
 
         resultsContainer.appendChild(
-            resultElement
+            article
         );
     }
+
+    resultsMeta.textContent =
+        `${data.count || 0} results`;
+
+    pageNumber.textContent =
+        `PAGE ${currentPage}`;
+
+    if (
+        currentPage > 1
+    ) {
+        show(previousPage);
+    }
+
+    show(pagination);
 }
 
-async function search(query, page = 1) {
+
+async function performSearch(
+    query,
+    page = 1
+) {
     const cleanQuery =
         query.trim();
 
-    if (!cleanQuery) {
+    if (
+        !cleanQuery
+    ) {
         return;
     }
 
@@ -117,37 +267,46 @@ async function search(query, page = 1) {
     currentPage =
         page;
 
-    showStatus(
-        "Searching..."
-    );
+    lastSearchURL =
+        `/api/search?q=${encodeURIComponent(
+            cleanQuery
+        )}&page=${page}`;
 
-    if (resultsContainer) {
-        resultsContainer.innerHTML = "";
-    }
+    hide(homeSection);
+
+    show(resultsSection);
+
+    resetStates();
+
+    show(loadingState);
+
+    resultsTitle.textContent =
+        `"${cleanQuery}"`;
+
+    resultsMeta.textContent =
+        "Searching...";
 
     try {
         const response =
             await fetch(
-                `/api/search?q=${encodeURIComponent(
-                    cleanQuery
-                )}&page=${page}`
+                lastSearchURL
             );
 
-        if (!response.ok) {
+        if (
+            !response.ok
+        ) {
             throw new Error(
-                `HTTP ${response.status}`
+                `Server returned ${response.status}`
             );
         }
 
         const data =
             await response.json();
 
-        renderResults(
-            data
-        );
+        hide(loadingState);
 
-        showStatus(
-            `${data.count || 0} results`
+        displayResults(
+            data
         );
 
     } catch (error) {
@@ -156,45 +315,134 @@ async function search(query, page = 1) {
             error
         );
 
-        if (resultsContainer) {
-            resultsContainer.innerHTML = `
-                <div class="search-error">
-                    Search failed.
-                    Please try again.
-                </div>
-            `;
-        }
+        hide(loadingState);
 
-        showStatus(
-            "Search failed"
-        );
+        errorMessage.textContent =
+            error.message ||
+            "The search request failed.";
+
+        show(errorState);
+
+        resultsMeta.textContent =
+            "Search failed";
     }
 }
 
-if (searchButton) {
-    searchButton.addEventListener(
-        "click",
-        () => {
-            search(
-                searchInput.value,
-                1
+
+searchForm.addEventListener(
+    "submit",
+    event => {
+        event.preventDefault();
+
+        performSearch(
+            searchInput.value,
+            1
+        );
+    }
+);
+
+
+searchInput.addEventListener(
+    "input",
+    () => {
+        if (
+            searchInput.value.length > 0
+        ) {
+            show(clearButton);
+        } else {
+            hide(clearButton);
+        }
+    }
+);
+
+
+clearButton.addEventListener(
+    "click",
+    () => {
+        searchInput.value =
+            "";
+
+        hide(clearButton);
+
+        searchInput.focus();
+    }
+);
+
+
+newSearchButton.addEventListener(
+    "click",
+    () => {
+        hide(resultsSection);
+
+        show(homeSection);
+
+        searchInput.value =
+            "";
+
+        searchInput.focus();
+
+        currentQuery =
+            "";
+
+        currentPage =
+            1;
+    }
+);
+
+
+previousPage.addEventListener(
+    "click",
+    () => {
+        if (
+            currentPage > 1
+        ) {
+            performSearch(
+                currentQuery,
+                currentPage - 1
             );
         }
-    );
-}
+    }
+);
 
-if (searchInput) {
-    searchInput.addEventListener(
-        "keydown",
-        event => {
-            if (
-                event.key === "Enter"
-            ) {
-                search(
-                    searchInput.value,
+
+nextPage.addEventListener(
+    "click",
+    () => {
+        performSearch(
+            currentQuery,
+            currentPage + 1
+        );
+    }
+);
+
+
+retryButton.addEventListener(
+    "click",
+    () => {
+        performSearch(
+            currentQuery,
+            currentPage
+        );
+    }
+);
+
+
+quickSearchButtons.forEach(
+    button => {
+        button.addEventListener(
+            "click",
+            () => {
+                const query =
+                    button.dataset.query;
+
+                searchInput.value =
+                    query;
+
+                performSearch(
+                    query,
                     1
                 );
             }
-        }
-    );
-}
+        );
+    }
+);
