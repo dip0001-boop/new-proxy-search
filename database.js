@@ -1,8 +1,15 @@
-const Database = require("better-sqlite3");
+const Database =
+    require("better-sqlite3");
 
-const db = new Database(
-    "vault-search.db"
-);
+const config =
+    require("./config");
+
+
+const db =
+    new Database(
+        config.databasePath
+    );
+
 
 db.pragma(
     "journal_mode = WAL"
@@ -297,6 +304,7 @@ function searchPages(
             pattern
 
         );
+
     }
 
 
@@ -318,6 +326,7 @@ function searchPages(
             pattern
 
         );
+
     }
 
 
@@ -334,6 +343,7 @@ function searchPages(
         .all(
             ...parameters
         );
+
 }
 
 
@@ -356,12 +366,14 @@ function getStats() {
         `)
 
         .get();
+
 }
 
 
 function close() {
 
     db.close();
+
 }
 
 
