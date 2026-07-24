@@ -1,403 +1,200 @@
-const searchForm = document.getElementById("searchForm");
 const searchInput = document.getElementById("searchInput");
-const clearButton = document.getElementById("clearButton");
+const searchButton = document.getElementById("searchButton");
+const resultsContainer = document.getElementById("results");
+const statusElement = document.getElementById("status");
 
-const homeSection = document.getElementById("homeSection");
-const resultsSection = document.getElementById("resultsSection");
-
-const resultsTitle = document.getElementById("resultsTitle");
-const resultsMeta = document.getElementById("resultsMeta");
-const resultsContainer = document.getElementById("resultsContainer");
-
-const loadingState = document.getElementById("loadingState");
-const errorState = document.getElementById("errorState");
-const errorMessage = document.getElementById("errorMessage");
-const emptyState = document.getElementById("emptyState");
-
-const retryButton = document.getElementById("retryButton");
-const newSearchButton = document.getElementById("newSearchButton");
-
-const pagination = document.getElementById("pagination");
-const previousPage = document.getElementById("previousPage");
-const nextPage = document.getElementById("nextPage");
-const pageNumber = document.getElementById("pageNumber");
-
-const quickSearchButtons = document.querySelectorAll(
-    ".quick-searches button"
-);
-
-let currentQuery = "";
 let currentPage = 1;
+let currentQuery = "";
 
+function getDisplayURL(url) {
+    try {
+        const parsed = new URL(url);
 
-// ================================
-// SEARCH FORM
-// ================================
+        return (
+            parsed.hostname +
+            parsed.pathname
+        );
 
-searchForm.addEventListener("submit", event => {
-    event.preventDefault();
+    } catch {
+        return url;
+    }
+}
 
-    const query = searchInput.value.trim();
+function escapeHTML(value) {
+    const div =
+        document.createElement("div");
 
-    if (!query) {
-        searchInput.focus();
+    div.textContent =
+        value || "";
+
+    return div.innerHTML;
+}
+
+function showStatus(message) {
+    if (statusElement) {
+        statusElement.textContent =
+            message;
+    }
+}
+
+function renderResults(data) {
+    if (!resultsContainer) {
         return;
     }
 
-    performSearch(query, 1);
-});
-
-
-// ================================
-// PERFORM SEARCH
-// ================================
-
-async function performSearch(query, page = 1) {
-
-    currentQuery = query;
-    currentPage = page;
-
-    resultsSection.classList.remove("hidden");
-
-    loadingState.classList.remove("hidden");
-    errorState.classList.add("hidden");
-    emptyState.classList.add("hidden");
-    pagination.classList.add("hidden");
-
     resultsContainer.innerHTML = "";
 
-    resultsTitle.textContent = `Results for "${query}"`;
-    resultsMeta.textContent = "Searching...";
+    if (
+        !data.results ||
+        data.results.length === 0
+    ) {
+        resultsContainer.innerHTML = `
+            <div class="no-results">
+                No results found.
+            </div>
+        `;
 
-    searchInput.value = query;
-
-    updateClearButton();
-
-    const url =
-        `?q=${encodeURIComponent(query)}&page=${page}`;
-
-    window.history.pushState({}, "", url);
-
-    if (page === 1) {
-        homeSection.classList.add("searching");
+        return;
     }
 
-    resultsSection.scrollIntoView({
-        behavior: "smooth",
-        block: "start"
-    });
+    for (
+        const result
+        of data.results
+    ) {
+        const resultElement =
+            document.createElement("article");
+
+        resultElement.className =
+            "search-result";
+
+        resultElement.innerHTML = `
+            <div class="result-url">
+                ${escapeHTML(
+                    getDisplayURL(
+                        result.link
+                    )
+                )}
+            </div>
+
+            <h2>
+                <a
+                    href="${escapeHTML(
+                        result.link
+                    )}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    ${escapeHTML(
+                        result.title
+                    )}
+                </a>
+            </h2>
+
+            <p>
+                ${escapeHTML(
+                    result.snippet
+                )}
+            </p>
+        `;
+
+        resultsContainer.appendChild(
+            resultElement
+        );
+    }
+}
+
+async function search(query, page = 1) {
+    const cleanQuery =
+        query.trim();
+
+    if (!cleanQuery) {
+        return;
+    }
+
+    currentQuery =
+        cleanQuery;
+
+    currentPage =
+        page;
+
+    showStatus(
+        "Searching..."
+    );
+
+    if (resultsContainer) {
+        resultsContainer.innerHTML = "";
+    }
 
     try {
-
-        const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query)}&page=${page}`
-        );
-
-        const data = await response.json();
+        const response =
+            await fetch(
+                `/api/search?q=${encodeURIComponent(
+                    cleanQuery
+                )}&page=${page}`
+            );
 
         if (!response.ok) {
             throw new Error(
-                data.error || "Search request failed."
+                `HTTP ${response.status}`
             );
         }
 
-        loadingState.classList.add("hidden");
+        const data =
+            await response.json();
 
-        if (
-            !data.results ||
-            data.results.length === 0
-        ) {
-            emptyState.classList.remove("hidden");
+        renderResults(
+            data
+        );
 
-            resultsMeta.textContent =
-                "No results found";
-
-            return;
-        }
-
-        const cachedText =
-            data.cached
-                ? " • CACHED"
-                : "";
-
-        resultsMeta.textContent =
-            `${data.count} results • ` +
-            `${data.time}ms` +
-            cachedText;
-
-        renderResults(data.results);
-
-        updatePagination(
-            data.results.length
+        showStatus(
+            `${data.count || 0} results`
         );
 
     } catch (error) {
-
-        loadingState.classList.add("hidden");
-
-        errorState.classList.remove("hidden");
-
-        errorMessage.textContent =
-            error.message ||
-            "The search service is unavailable.";
-
-        resultsMeta.textContent =
-            "Search failed";
-    }
-}
-
-
-// ================================
-// RENDER RESULTS
-// ================================
-
-function renderResults(results) {
-
-    const fragment =
-        document.createDocumentFragment();
-
-    results.forEach(result => {
-
-        const card =
-            document.createElement("article");
-
-        card.className = "result-card";
-
-
-        const title =
-            document.createElement("a");
-
-        title.className = "result-title";
-
-        title.textContent =
-            result.title ||
-            "Untitled result";
-
-        title.href =
-            result.link;
-
-        title.target =
-            "_blank";
-
-        title.rel =
-            "noopener noreferrer";
-
-
-        const url =
-            document.createElement("div");
-
-        url.className = "result-url";
-
-        url.textContent =
-            getDisplayURL(result.link);
-
-
-        const snippet =
-            document.createElement("div");
-
-        snippet.className =
-            "result-snippet";
-
-        snippet.textContent =
-            result.snippet ||
-            "No description available.";
-
-
-        card.appendChild(title);
-        card.appendChild(url);
-        card.appendChild(snippet);
-
-        fragment.appendChild(card);
-    });
-
-    resultsContainer.appendChild(fragment);
-}
-
-
-// ================================
-// PAGINATION
-// ================================
-
-function updatePagination(resultCount) {
-
-    pagination.classList.remove("hidden");
-
-    pageNumber.textContent =
-        `PAGE ${currentPage}`;
-
-    previousPage.disabled =
-        currentPage <= 1;
-
-    /*
-     * If we receive fewer than 10 results,
-     * we assume this is the final page.
-     */
-
-    nextPage.disabled =
-        resultCount < 10;
-}
-
-
-previousPage.addEventListener("click", () => {
-
-    if (currentPage > 1) {
-
-        performSearch(
-            currentQuery,
-            currentPage - 1
+        console.error(
+            "SEARCH ERROR:",
+            error
         );
-    }
-});
 
-
-nextPage.addEventListener("click", () => {
-
-    if (!nextPage.disabled) {
-
-        performSearch(
-            currentQuery,
-            currentPage + 1
-        );
-    }
-});
-
-
-// ================================
-// QUICK SEARCH BUTTONS
-// ================================
-
-quickSearchButtons.forEach(button => {
-
-    button.addEventListener("click", () => {
-
-        const query =
-            button.dataset.query;
-
-        searchInput.value = query;
-
-        updateClearButton();
-
-        performSearch(query, 1);
-    });
-
-});
-
-
-// ================================
-// CLEAR BUTTON
-// ================================
-
-searchInput.addEventListener(
-    "input",
-    updateClearButton
-);
-
-
-clearButton.addEventListener("click", () => {
-
-    searchInput.value = "";
-
-    updateClearButton();
-
-    searchInput.focus();
-});
-
-
-function updateClearButton() {
-
-    clearButton.classList.toggle(
-        "hidden",
-        !searchInput.value
-    );
-}
-
-
-// ================================
-// RETRY
-// ================================
-
-retryButton.addEventListener("click", () => {
-
-    if (currentQuery) {
-
-        performSearch(
-            currentQuery,
-            currentPage
-        );
-    }
-});
-
-
-// ================================
-// NEW SEARCH
-// ================================
-
-newSearchButton.addEventListener("click", () => {
-
-    window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-    });
-
-    searchInput.focus();
-});
-
-
-// ================================
-// URL SEARCH SUPPORT
-// ================================
-
-const params =
-    new URLSearchParams(
-        window.location.search
-    );
-
-const existingQuery =
-    params.get("q");
-
-const existingPage =
-    Number.parseInt(
-        params.get("page"),
-        10
-    );
-
-
-if (existingQuery) {
-
-    const page =
-        Number.isInteger(existingPage) &&
-        existingPage > 0
-            ? existingPage
-            : 1;
-
-    searchInput.value =
-        existingQuery;
-
-    updateClearButton();
-
-    performSearch(
-        existingQuery,
-        page
-    );
-}
-
-
-// ================================
-// KEYBOARD SHORTCUT
-// ================================
-
-document.addEventListener(
-    "keydown",
-    event => {
-
-        if (
-            event.key === "/" &&
-            document.activeElement !== searchInput
-        ) {
-
-            event.preventDefault();
-
-            searchInput.focus();
+        if (resultsContainer) {
+            resultsContainer.innerHTML = `
+                <div class="search-error">
+                    Search failed.
+                    Please try again.
+                </div>
+            `;
         }
+
+        showStatus(
+            "Search failed"
+        );
     }
-);
+}
+
+if (searchButton) {
+    searchButton.addEventListener(
+        "click",
+        () => {
+            search(
+                searchInput.value,
+                1
+            );
+        }
+    );
+}
+
+if (searchInput) {
+    searchInput.addEventListener(
+        "keydown",
+        event => {
+            if (
+                event.key === "Enter"
+            ) {
+                search(
+                    searchInput.value,
+                    1
+                );
+            }
+        }
+    );
+}
