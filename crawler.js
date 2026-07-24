@@ -2,519 +2,251 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const robotsParser = require("robots-parser");
 
-const database =
-    require("./database");
-
+const database = require("./database");
+const crawlQueue = require("./crawlQueue");
+const crawlerState = require("./crawlerState");
+const config = require("./config");
 
 const USER_AGENT =
     "TheVaultSearchBot/1.0";
 
+const robotsCache = new Map();
 
-const MAX_PAGE_SIZE =
-    2 * 1024 * 1024;
-
+const MAX_PAGES =
+    config.crawler.maxPagesPerRun;
 
 const REQUEST_DELAY =
-    1200;
+    config.crawler.requestDelay;
 
-
-const MAX_PAGES_PER_RUN =
-    100;
-
-
-const queue =
-    [];
-
-
-const queued =
-    new Set();
-
-
-const visited =
-    new Set();
-
-
-const robotsCache =
-    new Map();
+const MAX_PAGE_SIZE =
+    config.crawler.maxPageSize;
 
 
 const seeds = [
-
     "https://en.wikipedia.org/wiki/Main_Page",
-
     "https://developer.mozilla.org/en-US/",
-
     "https://www.mozilla.org/en-US/",
-
     "https://www.w3.org/",
-
     "https://www.nasa.gov/",
-
     "https://www.bbc.com/",
-
     "https://www.theguardian.com/international"
-
 ];
 
 
-function normalizeUrl(
-    rawUrl
-) {
-
+function normalizeUrl(rawUrl) {
     try {
-
-        const url =
-            new URL(
-                rawUrl
-            );
-
+        const url = new URL(rawUrl);
 
         if (
-
-            url.protocol !==
-                "http:" &&
-
-            url.protocol !==
-                "https:"
-
+            url.protocol !== "http:" &&
+            url.protocol !== "https:"
         ) {
-
             return null;
         }
 
-
-        url.hash =
-            "";
-
+        url.hash = "";
 
         url.hostname =
-            url.hostname
-                .toLowerCase();
-
-
-        if (
-
-            url.pathname.length >
-            1 &&
-
-            url.pathname.endsWith(
-                "/"
-            )
-
-        ) {
-
-            url.pathname =
-                url.pathname.slice(
-                    0,
-                    -1
-                );
-        }
-
+            url.hostname.toLowerCase();
 
         return url.toString();
 
-
     } catch {
-
         return null;
     }
 }
 
 
-function addToQueue(
-    rawUrl
-) {
+function addUrl(url) {
+    const normalized =
+        normalizeUrl(url);
 
-    const url =
-        normalizeUrl(
-            rawUrl
-        );
-
-
-    if (
-        !url
-    ) {
-
-        return;
-    }
-
-
-    if (
-
-        !queued.has(
-            url
-        ) &&
-
-        !visited.has(
-            url
-        )
-
-    ) {
-
-        queued.add(
-            url
-        );
-
-        queue.push(
-            url
-        );
+    if (normalized) {
+        crawlQueue.add(normalized);
     }
 }
 
 
-function getRobotsUrl(
-    url
-) {
-
+async function canCrawl(url) {
     const parsed =
-        new URL(
-            url
-        );
-
-
-    return (
-
-        `${parsed.protocol}//` +
-
-        `${parsed.host}` +
-
-        "/robots.txt"
-
-    );
-}
-
-
-async function canCrawl(
-    url
-) {
-
-    const parsed =
-        new URL(
-            url
-        );
-
+        new URL(url);
 
     const origin =
         parsed.origin;
 
-
     if (
-        !robotsCache.has(
-            origin
-        )
+        !robotsCache.has(origin)
     ) {
-
         try {
-
             const robotsUrl =
-                getRobotsUrl(
-                    url
-                );
-
+                `${origin}/robots.txt`;
 
             const response =
                 await axios.get(
-
                     robotsUrl,
-
                     {
-
-                        timeout:
-                            8000,
+                        timeout: 8000,
 
                         headers: {
-
                             "User-Agent":
                                 USER_AGENT
-
                         },
 
                         validateStatus:
                             status =>
-
                                 status >= 200 &&
-
                                 status < 500
-
                     }
-
                 );
-
 
             const robots =
                 robotsParser(
-
                     robotsUrl,
-
                     response.status === 200
-
                         ? response.data
-
                         : ""
-
                 );
 
-
             robotsCache.set(
-
                 origin,
-
                 robots
-
             );
 
-
         } catch {
-
             robotsCache.set(
-
                 origin,
-
                 null
-
             );
         }
     }
 
-
     const robots =
-        robotsCache.get(
-            origin
-        );
+        robotsCache.get(origin);
 
-
-    if (
-        !robots
-    ) {
-
+    if (!robots) {
         return true;
     }
 
-
     return (
-
         robots.isAllowed(
-
             url,
-
             USER_AGENT
-
         ) !== false
-
     );
 }
 
 
-function cleanText(
-    text
-) {
-
+function cleanText(text) {
     return text
-
-        .replace(
-            /\s+/g,
-            " "
-        )
-
+        .replace(/\s+/g, " ")
         .trim()
-
-        .slice(
-            0,
-            100000
-        );
+        .slice(0, 100000);
 }
 
 
-function extractPage(
-    html,
-    url
-) {
-
+function extractPage(html, url) {
     const $ =
-        cheerio.load(
-            html
-        );
-
+        cheerio.load(html);
 
     $(
-
-        "script," +
-
-        "style," +
-
-        "noscript," +
-
-        "svg," +
-
-        "iframe," +
-
-        "nav," +
-
-        "footer," +
-
-        "header"
-
+        "script, style, noscript, svg, iframe, nav, footer, header"
     ).remove();
-
 
     const title =
         $("title")
-
             .first()
-
             .text()
-
             .trim();
 
-
     const description =
-
         $('meta[name="description"]')
-
-            .attr(
-                "content"
-            ) ||
-
+            .attr("content") ||
         $('meta[property="og:description"]')
-
-            .attr(
-                "content"
-            ) ||
-
+            .attr("content") ||
         "";
-
 
     const content =
         cleanText(
-
-            $("body")
-
-                .text()
-
+            $("body").text()
         );
 
+    const links = [];
 
-    const links =
-        [];
-
-
-    $("a[href]")
-
-        .each(
-
-            (_, element) => {
-
+    $("a[href]").each(
+        (_, element) => {
+            try {
                 const href =
                     $(element)
-
-                        .attr(
-                            "href"
-                        );
-
+                        .attr("href");
 
                 const absolute =
                     normalizeUrl(
-
                         new URL(
-
                             href,
-
                             url
-
                         ).toString()
-
                     );
 
-
-                if (
-                    absolute
-                ) {
-
+                if (absolute) {
                     links.push(
                         absolute
                     );
                 }
 
+            } catch {
+                // Ignore bad links
             }
-
-        );
-
+        }
+    );
 
     return {
-
         title:
-
             title ||
-
             "Untitled page",
 
-
         description:
-
             cleanText(
                 description
             ),
 
-
         content,
 
-
         links
-
     };
 }
 
 
-async function crawlPage(
-    url
-) {
+async function crawlPage(item) {
+    const url =
+        item.url;
 
-    if (
-        visited.has(
-            url
-        )
-    ) {
-
-        return false;
-    }
-
-
-    visited.add(
-        url
+    crawlQueue.markCrawling(
+        item.id
     );
 
-
-    if (
-        !await canCrawl(
-            url
-        )
-    ) {
-
-        console.log(
-            `ROBOTS BLOCKED: ${url}`
-        );
-
-
-        return false;
-    }
-
-
-    console.log(
-        `CRAWLING: ${url}`
-    );
-
+    crawlerState.processed();
 
     try {
+        const allowed =
+            await canCrawl(url);
+
+        if (!allowed) {
+            crawlQueue.markComplete(
+                item.id
+            );
+
+            return;
+        }
+
+        console.log(
+            `CRAWLING: ${url}`
+        );
 
         const response =
             await axios.get(
-
                 url,
-
                 {
-
-                    timeout:
-                        15000,
+                    timeout: 15000,
 
                     maxContentLength:
                         MAX_PAGE_SIZE,
@@ -526,85 +258,60 @@ async function crawlPage(
                         "text",
 
                     headers: {
-
                         "User-Agent":
                             USER_AGENT,
 
                         "Accept":
-
-                            "text/html," +
-
-                            "application/xhtml+xml"
-
+                            "text/html,application/xhtml+xml"
                     },
 
                     validateStatus:
-
                         status =>
-
                             status >= 200 &&
-
                             status < 300
-
                 }
-
             );
 
-
         const contentType =
-
             response.headers[
-
                 "content-type"
-
             ] || "";
 
-
         if (
-
             !contentType.includes(
-
                 "text/html"
-
             )
-
         ) {
+            crawlQueue.markComplete(
+                item.id
+            );
 
-            return false;
+            return;
         }
-
 
         const page =
             extractPage(
-
                 response.data,
-
                 url
-
             );
 
-
         if (
-
-            page.content.length <
-            50
-
+            page.content.length < 50
         ) {
+            crawlQueue.markComplete(
+                item.id
+            );
 
-            return false;
+            return;
         }
-
 
         const domain =
             new URL(
                 url
             ).hostname;
 
-
         database.savePage({
-
             url,
-
             title:
                 page.title,
 
@@ -615,121 +322,108 @@ async function crawlPage(
                 page.content,
 
             domain
-
         });
 
+        crawlerState.indexed();
 
         for (
-
             const link
-
             of page.links
-
         ) {
-
-            addToQueue(
-                link
-            );
+            addUrl(link);
         }
 
+        crawlQueue.markComplete(
+            item.id
+        );
 
         console.log(
             `INDEXED: ${url}`
         );
 
-
-        return true;
-
-
-    } catch (
-        error
-    ) {
-
+    } catch (error) {
         console.log(
-
-            `FAILED: ${url} - ` +
-
-            error.message
-
+            `FAILED: ${url} - ${error.message}`
         );
 
+        crawlQueue.markFailed(
+            item.id
+        );
 
-        return false;
+        crawlerState.failed(
+            error.message
+        );
     }
 }
 
 
 async function startCrawler() {
-
-    for (
-
-        const seed
-
-        of seeds
-
+    if (
+        crawlerState.get().running
     ) {
-
-        addToQueue(
-            seed
+        console.log(
+            "Crawler already running."
         );
+
+        return;
     }
 
+    crawlerState.start();
 
-    let processed =
-        0;
+    try {
+        crawlQueue.resetStuck();
 
-
-    while (
-
-        queue.length > 0 &&
-
-        processed <
-        MAX_PAGES_PER_RUN
-
-    ) {
-
-        const url =
-            queue.shift();
-
-
-        await crawlPage(
-            url
+        crawlQueue.addMany(
+            seeds
         );
 
+        let processed = 0;
 
-        processed++;
+        while (
+            processed < MAX_PAGES
+        ) {
+            const item =
+                crawlQueue.getNext();
 
+            if (!item) {
+                console.log(
+                    "Crawl queue is empty."
+                );
 
-        await new Promise(
+                break;
+            }
 
-            resolve =>
+            await crawlPage(
+                item
+            );
 
-                setTimeout(
+            processed++;
 
-                    resolve,
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        REQUEST_DELAY
+                    )
+            );
+        }
 
-                    REQUEST_DELAY
-
-                )
-
+    } catch (error) {
+        crawlerState.failed(
+            error.message
         );
 
+        console.error(
+            "Crawler error:",
+            error
+        );
+
+    } finally {
+        crawlerState.finish();
     }
-
-
-    console.log(
-
-        `CRAWLER FINISHED: ` +
-
-        `${processed} pages processed`
-
-    );
-
 }
 
 
 module.exports = {
-
     startCrawler
-
 };
