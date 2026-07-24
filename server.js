@@ -1,27 +1,50 @@
-const express = require("express");
-const path = require("path");
-const compression = require("compression");
-const cors = require("cors");
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
+const express =
+    require("express");
+
+
+const path =
+    require("path");
+
+
+const compression =
+    require("compression");
+
+
+const cors =
+    require("cors");
+
+
+const helmet =
+    require("helmet");
+
+
+const rateLimit =
+    require("express-rate-limit");
+
 
 const config =
     require("./config");
 
+
 const cache =
     require("./cache");
+
 
 const database =
     require("./database");
 
+
 const crawlQueue =
     require("./crawlQueue");
+
 
 const crawlerState =
     require("./crawlerState");
 
+
 const searchEngine =
     require("./searchProviders");
+
 
 const scheduler =
     require("./scheduler");
@@ -37,10 +60,17 @@ app.set(
 );
 
 
+app.disable(
+    "x-powered-by"
+);
+
+
 app.use(
     helmet({
+
         contentSecurityPolicy:
             false
+
     })
 );
 
@@ -56,7 +86,25 @@ app.use(
 
 
 app.use(
-    express.json()
+    express.json({
+
+        limit:
+            "1mb"
+
+    })
+);
+
+
+app.use(
+    express.urlencoded({
+
+        extended:
+            false,
+
+        limit:
+            "1mb"
+
+    })
 );
 
 
@@ -69,17 +117,28 @@ app.use(
 
 const apiLimiter =
     rateLimit({
+
         windowMs:
-            config.rateLimit.windowMs,
+            config.rateLimit
+                .windowMs,
 
         max:
-            config.rateLimit.maxRequests,
+            config.rateLimit
+                .maxRequests,
 
         standardHeaders:
             true,
 
         legacyHeaders:
-            false
+            false,
+
+        message: {
+
+            error:
+                "Too many requests. Please try again later."
+
+        }
+
     });
 
 
@@ -91,8 +150,13 @@ app.use(
 
 app.get(
     "/health",
-    (req, res) => {
+    (
+        req,
+        res
+    ) => {
+
         res.json({
+
             status:
                 "online",
 
@@ -111,128 +175,221 @@ app.get(
             timestamp:
                 new Date()
                     .toISOString()
+
         });
+
     }
 );
 
 
 app.get(
     "/api/search",
-    (req, res) => {
+    (
+        req,
+        res
+    ) => {
+
         const startTime =
             Date.now();
 
+
         try {
+
             const query =
                 typeof req.query.q ===
                 "string"
-                    ? req.query.q.trim()
+
+                    ? req.query.q
+                        .trim()
+
                     : "";
 
-            if (!query) {
-                return res.status(400).json({
-                    error:
-                        "Please enter a search query."
-                });
+
+            if (
+                !query
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+
+                        error:
+                            "Please enter a search query."
+
+                    });
+
             }
+
 
             if (
                 query.length >
-                config.security.maxQueryLength
+                config.security
+                    .maxQueryLength
             ) {
-                return res.status(400).json({
-                    error:
-                        "Search query is too long."
-                });
+
+                return res
+                    .status(400)
+                    .json({
+
+                        error:
+                            "Search query is too long."
+
+                    });
+
             }
+
 
             const page =
                 Math.max(
+
                     Number.parseInt(
                         req.query.page,
                         10
                     ) || 1,
+
                     1
+
                 );
 
+
             const limit =
-                config.search.resultsPerPage;
+                config.search
+                    .resultsPerPage;
+
 
             const cacheKey =
-                `local:${query.toLowerCase()}` +
+                "local:" +
+
+                query
+                    .toLowerCase()
+                    .replace(
+                        /\s+/g,
+                        " "
+                    ) +
+
                 `:page:${page}`;
+
 
             const cached =
                 cache.get(
                     cacheKey
                 );
 
-            if (cached) {
+
+            if (
+                cached
+            ) {
+
                 return res.json({
+
                     ...cached,
+
                     cached:
                         true,
+
                     time:
                         Date.now() -
                         startTime
+
                 });
+
             }
+
 
             const search =
                 searchEngine.search(
+
                     query,
+
                     {
+
                         limit,
+
                         page
+
                     }
+
                 );
 
+
             const response = {
+
                 query,
+
                 page,
+
                 provider:
                     search.provider,
+
                 results:
                     search.results,
+
                 count:
-                    search.results.length,
+                    search.results
+                        .length,
+
                 cached:
                     false,
+
                 time:
                     Date.now() -
                     startTime
+
             };
 
+
             cache.set(
+
                 cacheKey,
+
                 response,
-                config.search.cacheTime
+
+                config.search
+                    .cacheTime
+
             );
 
-            res.json(
+
+            return res.json(
                 response
             );
 
-        } catch (error) {
+
+        } catch (
+            error
+        ) {
+
             console.error(
                 "SEARCH ERROR:",
                 error
             );
 
-            res.status(500).json({
-                error:
-                    error.message ||
-                    "Search failed."
-            });
+
+            return res
+                .status(500)
+                .json({
+
+                    error:
+                        error.message ||
+                        "Search failed."
+
+                });
+
         }
+
     }
 );
 
 
 app.get(
     "/api/stats",
-    (req, res) => {
+    (
+        req,
+        res
+    ) => {
+
         res.json({
+
             service:
                 "THE VAULT SEARCH",
 
@@ -244,53 +401,186 @@ app.get(
 
             queue:
                 crawlQueue.getStats()
+
         });
+
     }
 );
 
 
 app.post(
     "/api/crawl",
-    (req, res) => {
+    (
+        req,
+        res
+    ) => {
+
         if (
-            crawlerState.get().running
+            crawlerState
+                .get()
+                .running
         ) {
+
             return res.json({
+
                 status:
-                    "already_running"
+                    "already_running",
+
+                crawler:
+                    crawlerState.get()
+
             });
+
         }
 
+
         res.json({
+
             status:
                 "started"
+
         });
 
-        scheduler.runCrawler();
+
+        Promise.resolve()
+            .then(
+                () =>
+                    scheduler
+                        .runCrawler()
+            )
+            .catch(
+                error => {
+
+                    console.error(
+                        "CRAWLER START ERROR:",
+                        error
+                    );
+
+                }
+            );
+
     }
 );
 
 
 app.get(
     "*",
-    (req, res) => {
+    (
+        req,
+        res
+    ) => {
+
         res.sendFile(
+
             path.join(
+
                 __dirname,
+
                 "index.html"
+
             )
+
         );
+
     }
 );
 
 
-app.listen(
-    config.port,
+const server =
+    app.listen(
+
+        config.port,
+
+        () => {
+
+            console.log(
+
+                `THE VAULT SEARCH running on port ${config.port}`
+
+            );
+
+
+            scheduler
+                .startScheduler();
+
+        }
+
+    );
+
+
+process.on(
+    "SIGTERM",
     () => {
+
         console.log(
-            `THE VAULT SEARCH running on port ${config.port}`
+            "SIGTERM received. Shutting down."
         );
 
-        scheduler.startScheduler();
+
+        server.close(
+            () => {
+
+                try {
+
+                    database.close();
+
+                } catch (
+                    error
+                ) {
+
+                    console.error(
+                        "Database close error:",
+                        error
+                    );
+
+                }
+
+
+                process.exit(
+                    0
+                );
+
+            }
+        );
+
+    }
+);
+
+
+process.on(
+    "SIGINT",
+    () => {
+
+        console.log(
+            "SIGINT received. Shutting down."
+        );
+
+
+        server.close(
+            () => {
+
+                try {
+
+                    database.close();
+
+                } catch (
+                    error
+                ) {
+
+                    console.error(
+                        "Database close error:",
+                        error
+                    );
+
+                }
+
+
+                process.exit(
+                    0
+                );
+
+            }
+        );
+
     }
 );
