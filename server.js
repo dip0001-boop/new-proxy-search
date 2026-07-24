@@ -6,23 +6,34 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
 const config = require("./config");
-const logger = require("./logger");
 const cache = require("./cache");
 const searchProviders = require("./searchProviders");
 
 const app = express();
 
-app.set("trust proxy", 1);
+app.set(
+    "trust proxy",
+    1
+);
+
 
 app.use(
     helmet({
-        contentSecurityPolicy: false
+        contentSecurityPolicy:
+            false
     })
 );
 
-app.use(cors());
 
-app.use(compression());
+app.use(
+    cors()
+);
+
+
+app.use(
+    compression()
+);
+
 
 app.use(
     express.json({
@@ -30,260 +41,245 @@ app.use(
     })
 );
 
-app.use(express.static(__dirname));
 
-const apiLimiter = rateLimit({
-    windowMs: config.rateLimit.windowMs,
-    max: config.rateLimit.maxRequests,
+app.use(
+    express.static(
+        __dirname
+    )
+);
 
-    standardHeaders: true,
 
-    legacyHeaders: false,
+const apiLimiter =
+    rateLimit({
 
-    message: {
-        error: "Too many requests. Please try again later."
-    }
-});
+        windowMs:
+            config.rateLimit.windowMs,
 
-app.use("/api/", apiLimiter);
+        max:
+            config.rateLimit.maxRequests,
+
+        standardHeaders:
+            true,
+
+        legacyHeaders:
+            false,
+
+        message: {
+            error:
+                "Too many requests. Please try again later."
+        }
+    });
+
+
+app.use(
+    "/api/",
+    apiLimiter
+);
 
 
 // ================================
 // HEALTH CHECK
 // ================================
 
-app.get("/health", (req, res) => {
+app.get(
+    "/health",
+    (req, res) => {
 
-    res.json({
-        status: "online",
+        res.json({
 
-        service: "THE VAULT SEARCH",
+            status:
+                "online",
 
-        timestamp: new Date().toISOString()
-    });
+            service:
+                "THE VAULT SEARCH",
 
-});
+            timestamp:
+                new Date()
+                    .toISOString()
+        });
+    }
+);
 
 
 // ================================
 // SEARCH
 // ================================
 
-app.get("/api/search", async (req, res) => {
+app.get(
+    "/api/search",
+    async (req, res) => {
 
-    const startTime = Date.now();
-
-    try {
-
-        let query =
-            typeof req.query.q === "string"
-                ? req.query.q.trim()
-                : "";
+        const startTime =
+            Date.now();
 
 
-        if (!query) {
+        try {
 
-            return res.status(400).json({
-                error: "Please enter a search query."
-            });
+            const query =
+                typeof req.query.q ===
+                "string"
 
-        }
+                    ? req.query.q.trim()
 
-
-        if (
-            query.length <
-            config.security.minQueryLength
-        ) {
-
-            return res.status(400).json({
-                error: "Search query is too short."
-            });
-
-        }
+                    : "";
 
 
-        if (
-            query.length >
-            config.security.maxQueryLength
-        ) {
+            if (!query) {
 
-            return res.status(400).json({
-                error: "Search query is too long."
-            });
+                return res
+                    .status(400)
+                    .json({
 
-        }
-
-
-        let page =
-            Number.parseInt(
-                req.query.page,
-                10
-            );
+                        error:
+                            "Please enter a search query."
+                    });
+            }
 
 
-        if (
-            !Number.isInteger(page) ||
-            page < 1
-        ) {
+            if (
+                query.length >
+                config.security.maxQueryLength
+            ) {
 
-            page = 1;
+                return res
+                    .status(400)
+                    .json({
 
-        }
-
-
-        const resultsPerPage =
-            10;
-
-
-        const offset =
-            (page - 1) *
-            resultsPerPage;
+                        error:
+                            "Search query is too long."
+                    });
+            }
 
 
-        const cacheKey =
-            `${query}:page:${page}`;
+            const page =
+                Math.max(
+
+                    Number.parseInt(
+                        req.query.page,
+                        10
+                    ) || 1,
+
+                    1
+                );
 
 
-        const cached =
-            cache.get(cacheKey);
+            const cacheKey =
+                `${query.toLowerCase()}:page:${page}`;
 
 
-        if (cached) {
+            const cached =
+                cache.get(
+                    cacheKey
+                );
 
-            return res.json({
 
-                ...cached,
+            if (cached) {
 
-                cached: true,
+                return res.json({
+
+                    ...cached,
+
+                    cached:
+                        true,
+
+                    time:
+                        Date.now() -
+                        startTime
+                });
+            }
+
+
+            const search =
+                await searchProviders.search(
+
+                    query,
+
+                    {
+                        page
+                    }
+                );
+
+
+            const response = {
+
+                query,
+
+                page,
+
+                provider:
+                    search.provider,
+
+                results:
+                    search.results,
+
+                count:
+                    search.results.length,
+
+                cached:
+                    false,
 
                 time:
                     Date.now() -
                     startTime
-
-            });
-
-        }
+            };
 
 
-        const search =
-            await searchProviders.search(
-                query,
-                {
-                    count:
-                        resultsPerPage,
+            cache.set(
 
-                    offset
-                }
+                cacheKey,
+
+                response,
+
+                config.search.cacheTime
             );
 
 
-        const response = {
-
-            query,
-
-            page,
-
-            resultsPerPage,
-
-            provider:
-                search.provider,
-
-            results:
-                search.results,
-
-            count:
-                search.results.length,
-
-            hasResults:
-                search.results.length > 0,
-
-            cached:
-                false,
-
-            time:
-                Date.now() -
-                startTime
-
-        };
+            res.json(
+                response
+            );
 
 
-        cache.set(
-            cacheKey,
+        } catch (error) {
 
-            response,
-
-            config.search.cacheTime
-        );
-
-
-        logger.request(
-
-            "GET",
-
-            `/api/search?q=${query}&page=${page}`,
-
-            200,
-
-            Date.now() -
-            startTime
-
-        );
+            console.error(
+                "SEARCH ERROR:",
+                error
+            );
 
 
-        res.json(response);
+            res
+                .status(500)
+                .json({
 
-
-    } catch (error) {
-
-        logger.error(
-            "Search request failed",
-            error
-        );
-
-
-        res.status(500).json({
-
-            error:
-                "The search service is temporarily unavailable.",
-
-            details:
-                process.env.NODE_ENV ===
-                "development"
-
-                    ? error.message
-
-                    : undefined
-
-        });
-
+                    error:
+                        error.message ||
+                        "Search failed."
+                });
+        }
     }
-
-});
-
-
-// ================================
-// WEBSITE
-// ================================
-
-app.get("*", (req, res) => {
-
-    res.sendFile(
-
-        path.join(
-
-            __dirname,
-
-            "index.html"
-
-        )
-
-    );
-
-});
+);
 
 
 // ================================
-// START SERVER
+// FRONTEND
+// ================================
+
+app.get(
+    "*",
+    (req, res) => {
+
+        res.sendFile(
+            path.join(
+                __dirname,
+                "index.html"
+            )
+        );
+    }
+);
+
+
+// ================================
+// START
 // ================================
 
 app.listen(
@@ -292,12 +288,9 @@ app.listen(
 
     () => {
 
-        logger.info(
+        console.log(
 
             `THE VAULT SEARCH running on port ${config.port}`
-
         );
-
     }
-
 );
