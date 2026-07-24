@@ -1,184 +1,109 @@
 const axios = require("axios");
-const cheerio = require("cheerio");
 const config = require("./config");
 const logger = require("./logger");
 
-function createClient() {
-    return axios.create({
-        timeout: config.search.timeout,
-        headers: {
-            "User-Agent": config.search.userAgent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9"
-        },
-        maxRedirects: 5,
-        validateStatus: status => status >= 200 && status < 400
-    });
-}
+const braveClient = axios.create({
+    baseURL: "https://api.search.brave.com/res/v1",
+    timeout: config.search.timeout,
+    headers: {
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+        "X-Subscription-Token":
+            process.env.BRAVE_SEARCH_API_KEY
+    }
+});
 
-function cleanText(text) {
-    return String(text || "")
-        .replace(/\s+/g, " ")
-        .trim();
-}
+async function search(query, options = {}) {
+    const apiKey =
+        process.env.BRAVE_SEARCH_API_KEY;
 
-function parseDuckDuckGo(html, maxResults) {
-    const $ = cheerio.load(html);
-    const results = [];
+    if (!apiKey) {
+        throw new Error(
+            "BRAVE_SEARCH_API_KEY is not configured"
+        );
+    }
 
-    $(".result").each((index, element) => {
-        if (results.length >= maxResults) {
-            return;
-        }
-
-        const titleElement = $(element).find(
-            ".result__a, .result__title a"
+    const count =
+        Math.min(
+            Number(options.count) || 10,
+            20
         );
 
-        const snippetElement = $(element).find(
-            ".result__snippet"
+    const offset =
+        Math.max(
+            Number(options.offset) || 0,
+            0
         );
 
-        let link = titleElement.attr("href");
-
-        const title = cleanText(
-            titleElement.text()
-        );
-
-        const snippet = cleanText(
-            snippetElement.text()
-        );
-
-        if (!title || !link) {
-            return;
-        }
-
-        if (link.startsWith("//")) {
-            link = "https:" + link;
-        }
-
-        results.push({
-            title,
-            link,
-            snippet,
-            source: "DuckDuckGo"
-        });
-    });
-
-    return results;
-}
-
-async function searchDuckDuckGo(query) {
-    const client = createClient();
-
-    const url =
-        "https://html.duckduckgo.com/html/?q=" +
-        encodeURIComponent(query);
-
-    const response = await client.get(url);
-
-    const results = parseDuckDuckGo(
-        response.data,
-        config.search.maxResults
+    logger.info(
+        `Searching Brave for: "${query}"`
     );
 
-    if (!results.length) {
-        throw new Error(
-            "DuckDuckGo returned no usable results"
-        );
-    }
+    const response =
+        await braveClient.get(
+            "/web/search",
+            {
+                params: {
+                    q: query,
+                    count,
+                    offset,
 
-    return results;
-}
+                    country: "AU",
 
-async function searchBrave(query) {
-    if (!process.env.BRAVE_SEARCH_API_KEY) {
-        throw new Error(
-            "Brave Search API key is not configured"
-        );
-    }
+                    search_lang: "en",
 
-    const client = axios.create({
-        timeout: config.search.timeout,
-        headers: {
-            "X-Subscription-Token":
-                process.env.BRAVE_SEARCH_API_KEY,
-            "Accept": "application/json"
-        }
-    });
+                    safesearch: "moderate",
 
-    const response = await client.get(
-        "https://api.search.brave.com/res/v1/web/search",
-        {
-            params: {
-                q: query,
-                count: config.search.maxResults
+                    extra_snippets: true
+                }
             }
-        }
-    );
+        );
 
-    const results =
+
+    const webResults =
         response.data?.web?.results || [];
 
-    return results.map(result => ({
-        title: cleanText(result.title),
-        link: result.url,
-        snippet: cleanText(result.description),
-        source: "Brave Search"
-    }));
+
+    const results =
+        webResults.map(result => ({
+
+            title:
+                result.title || "",
+
+            link:
+                result.url || "",
+
+            snippet:
+                result.description || "",
+
+            extraSnippets:
+                result.extra_snippets || [],
+
+            source:
+                "Web",
+
+            favicon:
+                result.profile?.img || null,
+
+            age:
+                result.age || null
+
+        }));
+
+
+    return {
+
+        provider:
+            "Brave Search",
+
+        results,
+
+        total:
+            results.length
+
+    };
 }
 
-async function search(query) {
-    const providers = [
-        {
-            name: "DuckDuckGo",
-            search: searchDuckDuckGo
-        }
-    ];
-
-    if (process.env.BRAVE_SEARCH_API_KEY) {
-        providers.push({
-            name: "Brave Search",
-            search: searchBrave
-        });
-    }
-
-    let lastError = null;
-
-    for (const provider of providers) {
-        try {
-            logger.info(
-                `Trying search provider: ${provider.name}`
-            );
-
-            const results =
-                await provider.search(query);
-
-            if (results.length > 0) {
-                logger.info(
-                    `${provider.name} returned ${results.length} results`
-                );
-
-                return {
-                    provider: provider.name,
-                    results
-                };
-            }
-
-        } catch (error) {
-            lastError = error;
-
-            logger.warn(
-                `${provider.name} failed`,
-                error.message
-            );
-        }
-    }
-
-    throw lastError || new Error(
-        "All search providers failed"
-    );
-}
 
 module.exports = {
     search
