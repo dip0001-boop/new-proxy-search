@@ -1,24 +1,14 @@
 const config = {
-    port: process.env.PORT || 3000,
+    port: process.env.PORT || 10000,
 
     search: {
         timeout: 15000,
 
-        maxResults: 20,
-
-        cacheTime: 300,
-
-        defaultCountry: "AU",
-
-        defaultLanguage: "en",
-
-        safeSearch: "moderate"
+        cacheTime: 300
     },
 
     security: {
-        maxQueryLength: 300,
-
-        minQueryLength: 1
+        maxQueryLength: 300
     },
 
     rateLimit: {
