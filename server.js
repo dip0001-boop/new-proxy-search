@@ -14,11 +14,14 @@ const cache =
 const database =
     require("./database");
 
+const crawlQueue =
+    require("./crawlQueue");
+
+const crawlerState =
+    require("./crawlerState");
+
 const searchEngine =
     require("./searchProviders");
-
-const crawler =
-    require("./crawler");
 
 const scheduler =
     require("./scheduler");
@@ -86,16 +89,10 @@ app.use(
 );
 
 
-// ================================
-// HEALTH
-// ================================
-
 app.get(
     "/health",
     (req, res) => {
-
         res.json({
-
             status:
                 "online",
 
@@ -106,7 +103,10 @@ app.get(
                 database.getStats(),
 
             crawler:
-                scheduler.isRunning(),
+                crawlerState.get(),
+
+            queue:
+                crawlQueue.getStats(),
 
             timestamp:
                 new Date()
@@ -116,185 +116,123 @@ app.get(
 );
 
 
-// ================================
-// SEARCH
-// ================================
-
 app.get(
     "/api/search",
     (req, res) => {
-
         const startTime =
             Date.now();
 
-
         try {
-
             const query =
                 typeof req.query.q ===
                 "string"
-
                     ? req.query.q.trim()
-
                     : "";
 
-
             if (!query) {
-
-                return res
-                    .status(400)
-                    .json({
-
-                        error:
-                            "Please enter a search query."
-                    });
+                return res.status(400).json({
+                    error:
+                        "Please enter a search query."
+                });
             }
-
 
             if (
                 query.length >
                 config.security.maxQueryLength
             ) {
-
-                return res
-                    .status(400)
-                    .json({
-
-                        error:
-                            "Search query is too long."
-                    });
+                return res.status(400).json({
+                    error:
+                        "Search query is too long."
+                });
             }
-
 
             const page =
                 Math.max(
-
                     Number.parseInt(
                         req.query.page,
                         10
                     ) || 1,
-
                     1
                 );
 
-
-            const resultsPerPage =
+            const limit =
                 config.search.resultsPerPage;
-
 
             const cacheKey =
                 `local:${query.toLowerCase()}` +
                 `:page:${page}`;
-
 
             const cached =
                 cache.get(
                     cacheKey
                 );
 
-
             if (cached) {
-
                 return res.json({
-
                     ...cached,
-
                     cached:
                         true,
-
                     time:
                         Date.now() -
                         startTime
                 });
             }
 
-
             const search =
                 searchEngine.search(
-
                     query,
-
                     {
-
-                        limit:
-                            resultsPerPage,
-
+                        limit,
                         page
-
                     }
                 );
 
-
             const response = {
-
                 query,
-
                 page,
-
                 provider:
                     search.provider,
-
                 results:
                     search.results,
-
                 count:
                     search.results.length,
-
                 cached:
                     false,
-
                 time:
                     Date.now() -
                     startTime
             };
 
-
             cache.set(
-
                 cacheKey,
-
                 response,
-
                 config.search.cacheTime
             );
-
 
             res.json(
                 response
             );
 
-
         } catch (error) {
-
             console.error(
                 "SEARCH ERROR:",
                 error
             );
 
-
-            res
-                .status(500)
-                .json({
-
-                    error:
-                        error.message ||
-                        "Search failed."
-                });
+            res.status(500).json({
+                error:
+                    error.message ||
+                    "Search failed."
+            });
         }
     }
 );
 
 
-// ================================
-// INDEX STATS
-// ================================
-
 app.get(
     "/api/stats",
     (req, res) => {
-
         res.json({
-
             service:
                 "THE VAULT SEARCH",
 
@@ -302,55 +240,40 @@ app.get(
                 database.getStats(),
 
             crawler:
-                scheduler.isRunning()
+                crawlerState.get(),
+
+            queue:
+                crawlQueue.getStats()
         });
     }
 );
 
 
-// ================================
-// MANUAL CRAWL
-// ================================
-
 app.post(
     "/api/crawl",
-    async (req, res) => {
-
+    (req, res) => {
         if (
-            scheduler.isRunning()
+            crawlerState.get().running
         ) {
-
             return res.json({
-
                 status:
                     "already_running"
             });
         }
 
-
         res.json({
-
             status:
-                "started",
-
-            message:
-                "Crawler started."
+                "started"
         });
-
 
         scheduler.runCrawler();
     }
 );
 
 
-// ================================
-// FRONTEND
-// ================================
-
 app.get(
     "*",
     (req, res) => {
-
         res.sendFile(
             path.join(
                 __dirname,
@@ -361,19 +284,12 @@ app.get(
 );
 
 
-// ================================
-// START
-// ================================
-
 app.listen(
     config.port,
     () => {
-
         console.log(
-            `THE VAULT SEARCH running ` +
-            `on port ${config.port}`
+            `THE VAULT SEARCH running on port ${config.port}`
         );
-
 
         scheduler.startScheduler();
     }
