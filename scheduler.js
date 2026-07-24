@@ -1,66 +1,223 @@
-const crawler = require("./crawler");
+const crawler =
+    require("./crawler");
 
-let running = false;
+
+const crawlerState =
+    require("./crawlerState");
+
+
+let running =
+    false;
+
+
+let schedulerStarted =
+    false;
+
+
+let intervalHandle =
+    null;
+
 
 const CRAWL_INTERVAL =
-    15 * 60 * 1000; // 15 minutes
+    15 *
+    60 *
+    1000;
 
 
 async function runCrawler() {
-    if (running) {
+
+    if (
+        running ||
+        crawlerState
+            .get()
+            .running
+    ) {
+
         console.log(
+
             "Crawler already running. Skipping."
+
         );
 
-        return;
+        return {
+
+            status:
+                "already_running"
+
+        };
+
     }
 
-    running = true;
+
+    running =
+        true;
+
 
     console.log(
-        "Scheduled crawler run started."
+
+        "Crawler run started."
+
     );
 
+
     try {
-        await crawler.startCrawler();
+
+        await crawler
+            .startCrawler();
+
 
         console.log(
-            "Scheduled crawler run finished."
+
+            "Crawler run finished."
+
         );
 
-    } catch (error) {
+
+        return {
+
+            status:
+                "finished"
+
+        };
+
+
+    } catch (
+        error
+    ) {
+
         console.error(
-            "Scheduled crawler error:",
-            error.message
+
+            "Crawler error:",
+
+            error
+
         );
+
+
+        return {
+
+            status:
+                "failed",
+
+            error:
+                error.message
+
+        };
+
 
     } finally {
-        running = false;
+
+        running =
+            false;
+
     }
+
 }
 
 
 function startScheduler() {
+
+    if (
+        schedulerStarted
+    ) {
+
+        console.log(
+
+            "Crawler scheduler already started."
+
+        );
+
+        return;
+
+    }
+
+
+    schedulerStarted =
+        true;
+
+
     console.log(
+
         "Crawler scheduler started."
+
     );
+
 
     runCrawler();
 
-    setInterval(
-        runCrawler,
-        CRAWL_INTERVAL
+
+    intervalHandle =
+        setInterval(
+
+            () => {
+
+                runCrawler();
+
+            },
+
+            CRAWL_INTERVAL
+
+        );
+
+
+}
+
+
+function stopScheduler() {
+
+    if (
+        intervalHandle
+    ) {
+
+        clearInterval(
+
+            intervalHandle
+
+        );
+
+
+        intervalHandle =
+            null;
+
+    }
+
+
+    schedulerStarted =
+        false;
+
+
+    console.log(
+
+        "Crawler scheduler stopped."
+
     );
+
 }
 
 
 function isRunning() {
-    return running;
+
+    return (
+
+        running ||
+
+        crawlerState
+            .get()
+            .running
+
+    );
+
 }
 
 
 module.exports = {
+
     startScheduler,
+
+    stopScheduler,
+
     runCrawler,
+
     isRunning
+
 };
