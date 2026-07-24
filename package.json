@@ -1,7 +1,7 @@
 {
   "name": "the-vault-search",
   "version": "1.0.0",
-  "description": "THE VAULT Search Engine",
+  "description": "A web search engine for THE VAULT",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -16,8 +16,6 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
-    "helmet": "^8.0.0",
-    "lru-cache": "^11.0.2",
-    "node-cache": "^5.1.2"
+    "helmet": "^8.0.0"
   }
 }
