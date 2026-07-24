@@ -2,9 +2,18 @@ const config = {
     port: process.env.PORT || 10000,
 
     search: {
-        timeout: 15000,
+        cacheTime: 300,
 
-        cacheTime: 300
+        resultsPerPage: 10
+    },
+
+    crawler: {
+        maxPagesPerRun: 100,
+
+        requestDelay: 1500,
+
+        maxPageSize:
+            2 * 1024 * 1024
     },
 
     security: {
