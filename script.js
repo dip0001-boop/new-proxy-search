@@ -1,153 +1,113 @@
-const searchForm =
-    document.getElementById("searchForm");
+const searchForm = document.getElementById("searchForm");
+const searchInput = document.getElementById("searchInput");
+const clearButton = document.getElementById("clearButton");
 
-const searchInput =
-    document.getElementById("searchInput");
+const homeSection = document.getElementById("homeSection");
+const resultsSection = document.getElementById("resultsSection");
 
-const clearButton =
-    document.getElementById("clearButton");
+const resultsTitle = document.getElementById("resultsTitle");
+const resultsMeta = document.getElementById("resultsMeta");
+const resultsContainer = document.getElementById("resultsContainer");
 
-const resultsSection =
-    document.getElementById("resultsSection");
+const loadingState = document.getElementById("loadingState");
+const errorState = document.getElementById("errorState");
+const errorMessage = document.getElementById("errorMessage");
+const emptyState = document.getElementById("emptyState");
 
-const resultsTitle =
-    document.getElementById("resultsTitle");
+const retryButton = document.getElementById("retryButton");
+const newSearchButton = document.getElementById("newSearchButton");
 
-const resultsMeta =
-    document.getElementById("resultsMeta");
+const pagination = document.getElementById("pagination");
+const previousPage = document.getElementById("previousPage");
+const nextPage = document.getElementById("nextPage");
+const pageNumber = document.getElementById("pageNumber");
 
-const resultsContainer =
-    document.getElementById("resultsContainer");
+const quickSearchButtons = document.querySelectorAll(
+    ".quick-searches button"
+);
 
-const loadingState =
-    document.getElementById("loadingState");
-
-const errorState =
-    document.getElementById("errorState");
-
-const errorMessage =
-    document.getElementById("errorMessage");
-
-const emptyState =
-    document.getElementById("emptyState");
-
-const retryButton =
-    document.getElementById("retryButton");
-
-const newSearchButton =
-    document.getElementById("newSearchButton");
-
-const quickSearchButtons =
-    document.querySelectorAll(
-        ".quick-searches button"
-    );
-
-
-let lastSearch = "";
+let currentQuery = "";
+let currentPage = 1;
 
 
 // ================================
 // SEARCH FORM
 // ================================
 
-searchForm.addEventListener(
-    "submit",
-    event => {
+searchForm.addEventListener("submit", event => {
+    event.preventDefault();
 
-        event.preventDefault();
+    const query = searchInput.value.trim();
 
-        const query =
-            searchInput.value.trim();
-
-        if (!query) {
-            searchInput.focus();
-            return;
-        }
-
-        performSearch(query);
+    if (!query) {
+        searchInput.focus();
+        return;
     }
-);
+
+    performSearch(query, 1);
+});
 
 
 // ================================
-// SEARCH
+// PERFORM SEARCH
 // ================================
 
-async function performSearch(query) {
+async function performSearch(query, page = 1) {
 
-    lastSearch = query;
+    currentQuery = query;
+    currentPage = page;
 
-    resultsSection.classList.remove(
-        "hidden"
-    );
+    resultsSection.classList.remove("hidden");
 
-    loadingState.classList.remove(
-        "hidden"
-    );
-
-    errorState.classList.add(
-        "hidden"
-    );
-
-    emptyState.classList.add(
-        "hidden"
-    );
+    loadingState.classList.remove("hidden");
+    errorState.classList.add("hidden");
+    emptyState.classList.add("hidden");
+    pagination.classList.add("hidden");
 
     resultsContainer.innerHTML = "";
 
-    resultsTitle.textContent =
-        `Results for "${query}"`;
+    resultsTitle.textContent = `Results for "${query}"`;
+    resultsMeta.textContent = "Searching...";
 
-    resultsMeta.textContent =
-        "Searching...";
+    searchInput.value = query;
 
+    updateClearButton();
 
-    history.pushState(
-        {},
-        "",
-        `?q=${encodeURIComponent(query)}`
-    );
+    const url =
+        `?q=${encodeURIComponent(query)}&page=${page}`;
 
+    window.history.pushState({}, "", url);
+
+    if (page === 1) {
+        homeSection.classList.add("searching");
+    }
 
     resultsSection.scrollIntoView({
         behavior: "smooth",
         block: "start"
     });
 
-
     try {
 
-        const response =
-            await fetch(
-                `/api/search?q=${encodeURIComponent(query)}`
-            );
+        const response = await fetch(
+            `/api/search?q=${encodeURIComponent(query)}&page=${page}`
+        );
 
-
-        const data =
-            await response.json();
-
+        const data = await response.json();
 
         if (!response.ok) {
             throw new Error(
-                data.error ||
-                "Search request failed"
+                data.error || "Search request failed."
             );
         }
 
-
-        loadingState.classList.add(
-            "hidden"
-        );
-
+        loadingState.classList.add("hidden");
 
         if (
             !data.results ||
             data.results.length === 0
         ) {
-
-            emptyState.classList.remove(
-                "hidden"
-            );
+            emptyState.classList.remove("hidden");
 
             resultsMeta.textContent =
                 "No results found";
@@ -155,33 +115,27 @@ async function performSearch(query) {
             return;
         }
 
-
         const cachedText =
             data.cached
                 ? " • CACHED"
                 : "";
-
 
         resultsMeta.textContent =
             `${data.count} results • ` +
             `${data.time}ms` +
             cachedText;
 
+        renderResults(data.results);
 
-        renderResults(
-            data.results
+        updatePagination(
+            data.results.length
         );
-
 
     } catch (error) {
 
-        loadingState.classList.add(
-            "hidden"
-        );
+        loadingState.classList.add("hidden");
 
-        errorState.classList.remove(
-            "hidden"
-        );
+        errorState.classList.remove("hidden");
 
         errorMessage.textContent =
             error.message ||
@@ -202,29 +156,22 @@ function renderResults(results) {
     const fragment =
         document.createDocumentFragment();
 
-
     results.forEach(result => {
 
         const card =
-            document.createElement(
-                "article"
-            );
+            document.createElement("article");
 
-
-        card.className =
-            "result-card";
+        card.className = "result-card";
 
 
         const title =
-            document.createElement(
-                "a"
-            );
+            document.createElement("a");
 
-        title.className =
-            "result-title";
+        title.className = "result-title";
 
         title.textContent =
-            result.title;
+            result.title ||
+            "Untitled result";
 
         title.href =
             result.link;
@@ -237,23 +184,16 @@ function renderResults(results) {
 
 
         const url =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
-        url.className =
-            "result-url";
+        url.className = "result-url";
 
         url.textContent =
-            getDisplayURL(
-                result.link
-            );
+            getDisplayURL(result.link);
 
 
         const snippet =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
         snippet.className =
             "result-snippet";
@@ -263,93 +203,84 @@ function renderResults(results) {
             "No description available.";
 
 
-        const source =
-            document.createElement(
-                "span"
-            );
+        card.appendChild(title);
+        card.appendChild(url);
+        card.appendChild(snippet);
 
-        source.className =
-            "result-source";
-
-        source.textContent =
-            result.source ||
-            "WEB";
-
-
-        card.appendChild(
-            title
-        );
-
-        card.appendChild(
-            url
-        );
-
-        card.appendChild(
-            snippet
-        );
-
-        card.appendChild(
-            source
-        );
-
-
-        fragment.appendChild(
-            card
-        );
-
+        fragment.appendChild(card);
     });
 
-
-    resultsContainer.appendChild(
-        fragment
-    );
+    resultsContainer.appendChild(fragment);
 }
 
 
 // ================================
-// URL DISPLAY
+// PAGINATION
 // ================================
 
-function getDisplayURL(url) {
+function updatePagination(resultCount) {
 
-    try {
+    pagination.classList.remove("hidden");
 
-        return new URL(url).hostname;
+    pageNumber.textContent =
+        `PAGE ${currentPage}`;
 
-    } catch {
+    previousPage.disabled =
+        currentPage <= 1;
 
-        return url;
+    /*
+     * If we receive fewer than 10 results,
+     * we assume this is the final page.
+     */
+
+    nextPage.disabled =
+        resultCount < 10;
+}
+
+
+previousPage.addEventListener("click", () => {
+
+    if (currentPage > 1) {
+
+        performSearch(
+            currentQuery,
+            currentPage - 1
+        );
     }
-}
+});
+
+
+nextPage.addEventListener("click", () => {
+
+    if (!nextPage.disabled) {
+
+        performSearch(
+            currentQuery,
+            currentPage + 1
+        );
+    }
+});
 
 
 // ================================
 // QUICK SEARCH BUTTONS
 // ================================
 
-quickSearchButtons.forEach(
-    button => {
+quickSearchButtons.forEach(button => {
 
-        button.addEventListener(
-            "click",
-            () => {
+    button.addEventListener("click", () => {
 
-                const query =
-                    button.dataset.query;
+        const query =
+            button.dataset.query;
 
-                searchInput.value =
-                    query;
+        searchInput.value = query;
 
-                updateClearButton();
+        updateClearButton();
 
-                performSearch(
-                    query
-                );
-            }
-        );
+        performSearch(query, 1);
+    });
 
-    }
-);
+});
 
 
 // ================================
@@ -362,18 +293,14 @@ searchInput.addEventListener(
 );
 
 
-clearButton.addEventListener(
-    "click",
-    () => {
+clearButton.addEventListener("click", () => {
 
-        searchInput.value =
-            "";
+    searchInput.value = "";
 
-        updateClearButton();
+    updateClearButton();
 
-        searchInput.focus();
-    }
-);
+    searchInput.focus();
+});
 
 
 function updateClearButton() {
@@ -389,36 +316,31 @@ function updateClearButton() {
 // RETRY
 // ================================
 
-retryButton.addEventListener(
-    "click",
-    () => {
+retryButton.addEventListener("click", () => {
 
-        if (lastSearch) {
+    if (currentQuery) {
 
-            performSearch(
-                lastSearch
-            );
-        }
+        performSearch(
+            currentQuery,
+            currentPage
+        );
     }
-);
+});
 
 
 // ================================
 // NEW SEARCH
 // ================================
 
-newSearchButton.addEventListener(
-    "click",
-    () => {
+newSearchButton.addEventListener("click", () => {
 
-        window.scrollTo({
-            top: 0,
-            behavior: "smooth"
-        });
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
 
-        searchInput.focus();
-    }
-);
+    searchInput.focus();
+});
 
 
 // ================================
@@ -430,12 +352,23 @@ const params =
         window.location.search
     );
 
-
 const existingQuery =
     params.get("q");
 
+const existingPage =
+    Number.parseInt(
+        params.get("page"),
+        10
+    );
+
 
 if (existingQuery) {
+
+    const page =
+        Number.isInteger(existingPage) &&
+        existingPage > 0
+            ? existingPage
+            : 1;
 
     searchInput.value =
         existingQuery;
@@ -443,7 +376,8 @@ if (existingQuery) {
     updateClearButton();
 
     performSearch(
-        existingQuery
+        existingQuery,
+        page
     );
 }
 
@@ -458,14 +392,12 @@ document.addEventListener(
 
         if (
             event.key === "/" &&
-            document.activeElement !==
-            searchInput
+            document.activeElement !== searchInput
         ) {
 
             event.preventDefault();
 
             searchInput.focus();
         }
-
     }
 );
