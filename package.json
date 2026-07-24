@@ -1,11 +1,10 @@
 {
   "name": "the-vault-search",
-  "version": "2.0.0",
-  "description": "Independent web crawler and search engine for THE VAULT",
+  "version": "4.0.0",
+  "description": "THE VAULT high-performance live proxy search engine",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "crawl": "node crawler.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": "22.x"
