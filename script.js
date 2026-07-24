@@ -3,90 +3,108 @@ const searchForm =
         "searchForm"
     );
 
+
 const searchInput =
     document.getElementById(
         "searchInput"
     );
+
 
 const clearButton =
     document.getElementById(
         "clearButton"
     );
 
+
 const homeSection =
     document.getElementById(
         "homeSection"
     );
+
 
 const resultsSection =
     document.getElementById(
         "resultsSection"
     );
 
+
 const resultsTitle =
     document.getElementById(
         "resultsTitle"
     );
+
 
 const resultsMeta =
     document.getElementById(
         "resultsMeta"
     );
 
+
 const loadingState =
     document.getElementById(
         "loadingState"
     );
+
 
 const errorState =
     document.getElementById(
         "errorState"
     );
 
+
 const errorMessage =
     document.getElementById(
         "errorMessage"
     );
+
 
 const emptyState =
     document.getElementById(
         "emptyState"
     );
 
+
 const resultsContainer =
     document.getElementById(
         "resultsContainer"
     );
+
 
 const pagination =
     document.getElementById(
         "pagination"
     );
 
+
 const previousPage =
     document.getElementById(
         "previousPage"
     );
+
 
 const nextPage =
     document.getElementById(
         "nextPage"
     );
 
+
 const pageNumber =
     document.getElementById(
         "pageNumber"
     );
+
 
 const newSearchButton =
     document.getElementById(
         "newSearchButton"
     );
 
+
 const retryButton =
     document.getElementById(
         "retryButton"
     );
+
 
 const quickSearchButtons =
     document.querySelectorAll(
@@ -94,125 +112,292 @@ const quickSearchButtons =
     );
 
 
-let currentQuery = "";
-
-let currentPage = 1;
-
-let lastSearchURL = "";
+let currentQuery =
+    "";
 
 
-function getDisplayURL(url) {
+let currentPage =
+    1;
+
+
+let activeRequest =
+    0;
+
+
+let currentController =
+    null;
+
+
+function getDisplayURL(
+    url
+) {
+
     try {
-        const parsed =
-            new URL(url);
 
-        return (
-            parsed.hostname +
-            parsed.pathname
-        );
+        const parsed =
+            new URL(
+                url
+            );
+
+
+        let display =
+            parsed.hostname;
+
+
+        if (
+            parsed.pathname &&
+            parsed.pathname !== "/"
+        ) {
+
+            display +=
+                parsed.pathname;
+
+        }
+
+
+        return display;
 
     } catch {
-        return url;
+
+        return String(
+            url || ""
+        );
+
     }
+
 }
 
 
-function escapeHTML(value) {
+function escapeHTML(
+    value
+) {
+
     const div =
         document.createElement(
             "div"
         );
 
+
     div.textContent =
-        value || "";
+        String(
+            value || ""
+        );
+
 
     return div.innerHTML;
+
 }
 
 
-function show(element) {
-    element.classList.remove(
-        "hidden"
-    );
+function show(
+    element
+) {
+
+    if (
+        element
+    ) {
+
+        element.classList
+            .remove(
+                "hidden"
+            );
+
+    }
+
 }
 
 
-function hide(element) {
-    element.classList.add(
-        "hidden"
-    );
+function hide(
+    element
+) {
+
+    if (
+        element
+    ) {
+
+        element.classList
+            .add(
+                "hidden"
+            );
+
+    }
+
 }
 
 
 function resetStates() {
-    hide(loadingState);
-    hide(errorState);
-    hide(emptyState);
-    hide(pagination);
 
-    resultsContainer.innerHTML =
+    hide(
+        loadingState
+    );
+
+
+    hide(
+        errorState
+    );
+
+
+    hide(
+        emptyState
+    );
+
+
+    hide(
+        pagination
+    );
+
+
+    resultsContainer
+        .innerHTML =
         "";
+
 }
 
 
-function displayResults(data) {
-    resultsContainer.innerHTML =
-        "";
+function setLoading(
+    loading
+) {
 
     if (
-        !data.results ||
-        data.results.length === 0
+        loading
     ) {
-        show(emptyState);
+
+        show(
+            loadingState
+        );
+
+        hide(
+            errorState
+        );
+
+        hide(
+            emptyState
+        );
+
+        hide(
+            pagination
+        );
+
+    } else {
+
+        hide(
+            loadingState
+        );
+
+    }
+
+}
+
+
+function displayResults(
+    data
+) {
+
+    resultsContainer
+        .innerHTML =
+        "";
+
+
+    const results =
+        Array.isArray(
+            data.results
+        )
+
+            ? data.results
+
+            : [];
+
+
+    if (
+        results.length ===
+        0
+    ) {
+
+        show(
+            emptyState
+        );
+
+
+        hide(
+            pagination
+        );
+
 
         resultsMeta.textContent =
             "No results found";
 
+
         return;
+
     }
+
 
     for (
         const result
-        of data.results
+        of results
     ) {
+
         const article =
             document.createElement(
                 "article"
             );
 
+
         article.className =
             "search-result";
 
-        const safeURL =
-            escapeHTML(
-                result.link
-            );
-
-        const displayURL =
-            escapeHTML(
-                getDisplayURL(
-                    result.link
-                )
-            );
 
         const title =
             escapeHTML(
+
                 result.title ||
+
                 "Untitled page"
+
             );
+
+
+        const link =
+            String(
+                result.link ||
+                "#"
+            );
+
+
+        const safeURL =
+            escapeHTML(
+                link
+            );
+
+
+        const displayURL =
+            escapeHTML(
+
+                getDisplayURL(
+                    link
+                )
+
+            );
+
 
         const snippet =
             escapeHTML(
+
                 result.snippet ||
+
                 "No description available."
+
             );
 
+
         article.innerHTML = `
+
             <div class="result-url">
                 ${displayURL}
             </div>
 
             <h3>
+
                 <a
                     href="${safeURL}"
                     target="_blank"
@@ -220,31 +405,72 @@ function displayResults(data) {
                 >
                     ${title}
                 </a>
+
             </h3>
 
             <p>
                 ${snippet}
             </p>
+
         `;
 
-        resultsContainer.appendChild(
-            article
-        );
+
+        resultsContainer
+            .appendChild(
+                article
+            );
+
     }
 
+
     resultsMeta.textContent =
-        `${data.count || 0} results`;
+        `${results.length} results`;
+
 
     pageNumber.textContent =
         `PAGE ${currentPage}`;
 
+
     if (
-        currentPage > 1
+        currentPage >
+        1
     ) {
-        show(previousPage);
+
+        show(
+            previousPage
+        );
+
+    } else {
+
+        hide(
+            previousPage
+        );
+
     }
 
-    show(pagination);
+
+    if (
+        results.length >=
+        10
+    ) {
+
+        show(
+            nextPage
+        );
+
+    } else {
+
+        hide(
+            nextPage
+        );
+
+    }
+
+
+    show(
+        pagination
+    );
+
 }
 
 
@@ -252,197 +478,456 @@ async function performSearch(
     query,
     page = 1
 ) {
+
     const cleanQuery =
-        query.trim();
+        String(
+            query || ""
+        )
+            .trim();
+
 
     if (
         !cleanQuery
     ) {
+
+        searchInput.focus();
+
         return;
+
     }
+
+
+    if (
+        currentController
+    ) {
+
+        currentController
+            .abort();
+
+    }
+
+
+    currentController =
+        new AbortController();
+
+
+    const requestID =
+        ++activeRequest;
+
 
     currentQuery =
         cleanQuery;
 
-    currentPage =
-        page;
 
-    lastSearchURL =
+    currentPage =
+        Math.max(
+            Number(
+                page
+            ) || 1,
+            1
+        );
+
+
+    const searchURL =
         `/api/search?q=${encodeURIComponent(
             cleanQuery
-        )}&page=${page}`;
+        )}&page=${currentPage}`;
 
-    hide(homeSection);
 
-    show(resultsSection);
+    hide(
+        homeSection
+    );
+
+
+    show(
+        resultsSection
+    );
+
 
     resetStates();
 
-    show(loadingState);
+
+    setLoading(
+        true
+    );
+
 
     resultsTitle.textContent =
         `"${cleanQuery}"`;
 
+
     resultsMeta.textContent =
         "Searching...";
 
+
     try {
+
         const response =
             await fetch(
-                lastSearchURL
+
+                searchURL,
+
+                {
+
+                    signal:
+                        currentController
+                            .signal,
+
+                    headers: {
+
+                        Accept:
+                            "application/json"
+
+                    }
+
+                }
+
             );
+
 
         if (
             !response.ok
         ) {
+
+            let message =
+                `Server returned ${response.status}`;
+
+
+            try {
+
+                const errorData =
+                    await response
+                        .json();
+
+
+                if (
+                    errorData.error
+                ) {
+
+                    message =
+                        errorData.error;
+
+                }
+
+            } catch {
+                // Ignore invalid error JSON
+            }
+
+
             throw new Error(
-                `Server returned ${response.status}`
+                message
             );
+
         }
+
 
         const data =
             await response.json();
 
-        hide(loadingState);
+
+        if (
+            requestID !==
+            activeRequest
+        ) {
+
+            return;
+
+        }
+
+
+        setLoading(
+            false
+        );
+
 
         displayResults(
             data
         );
 
-    } catch (error) {
+
+    } catch (
+        error
+    ) {
+
+        if (
+            error.name ===
+            "AbortError"
+        ) {
+
+            return;
+
+        }
+
+
+        if (
+            requestID !==
+            activeRequest
+        ) {
+
+            return;
+
+        }
+
+
         console.error(
             "SEARCH ERROR:",
             error
         );
 
-        hide(loadingState);
+
+        setLoading(
+            false
+        );
+
 
         errorMessage.textContent =
             error.message ||
+
             "The search request failed.";
 
-        show(errorState);
+
+        show(
+            errorState
+        );
+
 
         resultsMeta.textContent =
             "Search failed";
+
     }
+
 }
 
 
 searchForm.addEventListener(
+
     "submit",
+
     event => {
+
         event.preventDefault();
 
+
         performSearch(
+
             searchInput.value,
+
             1
+
         );
+
     }
+
 );
 
 
 searchInput.addEventListener(
+
     "input",
+
     () => {
+
         if (
-            searchInput.value.length > 0
+
+            searchInput.value
+                .length > 0
+
         ) {
-            show(clearButton);
+
+            show(
+                clearButton
+            );
+
         } else {
-            hide(clearButton);
+
+            hide(
+                clearButton
+            );
+
         }
+
     }
+
 );
 
 
 clearButton.addEventListener(
+
     "click",
+
     () => {
+
         searchInput.value =
             "";
 
-        hide(clearButton);
+
+        hide(
+            clearButton
+        );
+
 
         searchInput.focus();
+
     }
+
 );
 
 
 newSearchButton.addEventListener(
-    "click",
-    () => {
-        hide(resultsSection);
 
-        show(homeSection);
+    "click",
+
+    () => {
+
+        if (
+            currentController
+        ) {
+
+            currentController
+                .abort();
+
+        }
+
+
+        hide(
+            resultsSection
+        );
+
+
+        show(
+            homeSection
+        );
+
 
         searchInput.value =
             "";
 
+
+        hide(
+            clearButton
+        );
+
+
         searchInput.focus();
+
 
         currentQuery =
             "";
 
+
         currentPage =
             1;
+
+
+        resultsContainer
+            .innerHTML =
+            "";
+
     }
+
 );
 
 
 previousPage.addEventListener(
+
     "click",
+
     () => {
+
         if (
-            currentPage > 1
+            currentPage >
+            1
         ) {
+
             performSearch(
+
                 currentQuery,
+
                 currentPage - 1
+
             );
+
         }
+
     }
+
 );
 
 
 nextPage.addEventListener(
+
     "click",
+
     () => {
+
         performSearch(
+
             currentQuery,
+
             currentPage + 1
+
         );
+
     }
+
 );
 
 
 retryButton.addEventListener(
+
     "click",
+
     () => {
+
         performSearch(
+
             currentQuery,
+
             currentPage
+
         );
+
     }
+
 );
 
 
 quickSearchButtons.forEach(
+
     button => {
+
         button.addEventListener(
+
             "click",
+
             () => {
+
                 const query =
-                    button.dataset.query;
+                    button.dataset
+                        .query;
+
 
                 searchInput.value =
                     query;
 
-                performSearch(
-                    query,
-                    1
+
+                show(
+                    clearButton
                 );
+
+
+                performSearch(
+
+                    query,
+
+                    1
+
+                );
+
             }
+
         );
+
     }
+
 );
