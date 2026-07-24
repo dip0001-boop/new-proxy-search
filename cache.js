@@ -1,51 +1,40 @@
-const NodeCache = require("node-cache");
+const cache = new Map();
 
-const cache = new NodeCache({
-    stdTTL: 300,
-    checkperiod: 60,
-    useClones: false
-});
+function get(key) {
+    const item = cache.get(key);
 
-function normalizeKey(query) {
-    return query
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, " ");
+    if (!item) {
+        return null;
+    }
+
+    if (Date.now() > item.expiresAt) {
+        cache.delete(key);
+        return null;
+    }
+
+    return item.value;
 }
 
-function get(query) {
-    return cache.get(normalizeKey(query));
-}
-
-function set(query, data, ttl = 300) {
-    return cache.set(
-        normalizeKey(query),
-        data,
-        ttl
-    );
-}
-
-function has(query) {
-    return cache.has(normalizeKey(query));
-}
-
-function del(query) {
-    return cache.del(normalizeKey(query));
+function set(key, value, ttlSeconds = 300) {
+    cache.set(key, {
+        value,
+        expiresAt:
+            Date.now() +
+            (ttlSeconds * 1000)
+    });
 }
 
 function clear() {
-    return cache.flushAll();
+    cache.clear();
 }
 
-function stats() {
-    return cache.getStats();
+function size() {
+    return cache.size;
 }
 
 module.exports = {
     get,
     set,
-    has,
-    del,
     clear,
-    stats
+    size
 };
