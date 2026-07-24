@@ -12,109 +12,221 @@ const searchProviders = require("./searchProviders");
 
 const app = express();
 
-app.use(helmet({
-    contentSecurityPolicy: false
-}));
+app.set("trust proxy", 1);
+
+app.use(
+    helmet({
+        contentSecurityPolicy: false
+    })
+);
 
 app.use(cors());
 
 app.use(compression());
 
-app.use(express.json({
-    limit: "1mb"
-}));
+app.use(
+    express.json({
+        limit: "1mb"
+    })
+);
 
 app.use(express.static(__dirname));
 
-const limiter = rateLimit({
+const apiLimiter = rateLimit({
     windowMs: config.rateLimit.windowMs,
     max: config.rateLimit.maxRequests,
+
     standardHeaders: true,
-    legacyHeaders: false
+
+    legacyHeaders: false,
+
+    message: {
+        error: "Too many requests. Please try again later."
+    }
 });
 
-app.use("/api/", limiter);
+app.use("/api/", apiLimiter);
 
 
-// Health check for Render
+// ================================
+// HEALTH CHECK
+// ================================
+
 app.get("/health", (req, res) => {
+
     res.json({
         status: "online",
-        service: "THE VAULT SEARCH"
+
+        service: "THE VAULT SEARCH",
+
+        timestamp: new Date().toISOString()
     });
+
 });
 
 
-// Search API
+// ================================
+// SEARCH
+// ================================
+
 app.get("/api/search", async (req, res) => {
 
-    const start = Date.now();
+    const startTime = Date.now();
 
     try {
 
-        let query = req.query.q;
+        let query =
+            typeof req.query.q === "string"
+                ? req.query.q.trim()
+                : "";
+
 
         if (!query) {
-            return res.status(400).json({
-                error: "Missing search query"
-            });
-        }
 
-        query = query.trim();
+            return res.status(400).json({
+                error: "Please enter a search query."
+            });
+
+        }
 
 
         if (
-            query.length < config.security.minQueryLength ||
-            query.length > config.security.maxQueryLength
+            query.length <
+            config.security.minQueryLength
         ) {
+
             return res.status(400).json({
-                error: "Invalid search length"
+                error: "Search query is too short."
             });
+
         }
 
 
-        const cached = cache.get(query);
+        if (
+            query.length >
+            config.security.maxQueryLength
+        ) {
+
+            return res.status(400).json({
+                error: "Search query is too long."
+            });
+
+        }
+
+
+        let page =
+            Number.parseInt(
+                req.query.page,
+                10
+            );
+
+
+        if (
+            !Number.isInteger(page) ||
+            page < 1
+        ) {
+
+            page = 1;
+
+        }
+
+
+        const resultsPerPage =
+            10;
+
+
+        const offset =
+            (page - 1) *
+            resultsPerPage;
+
+
+        const cacheKey =
+            `${query}:page:${page}`;
+
+
+        const cached =
+            cache.get(cacheKey);
+
 
         if (cached) {
 
-            logger.request(
-                "GET",
-                `/api/search?q=${query}`,
-                200,
-                Date.now() - start
-            );
-
             return res.json({
+
                 ...cached,
-                cached: true
+
+                cached: true,
+
+                time:
+                    Date.now() -
+                    startTime
+
             });
+
         }
 
 
         const search =
-            await searchProviders.search(query);
+            await searchProviders.search(
+                query,
+                {
+                    count:
+                        resultsPerPage,
+
+                    offset
+                }
+            );
 
 
         const response = {
+
             query,
-            provider: search.provider,
-            results: search.results,
-            count: search.results.length,
-            time: Date.now() - start
+
+            page,
+
+            resultsPerPage,
+
+            provider:
+                search.provider,
+
+            results:
+                search.results,
+
+            count:
+                search.results.length,
+
+            hasResults:
+                search.results.length > 0,
+
+            cached:
+                false,
+
+            time:
+                Date.now() -
+                startTime
+
         };
 
 
         cache.set(
-            query,
-            response
+            cacheKey,
+
+            response,
+
+            config.search.cacheTime
         );
 
 
         logger.request(
+
             "GET",
-            `/api/search?q=${query}`,
+
+            `/api/search?q=${query}&page=${page}`,
+
             200,
-            Date.now() - start
+
+            Date.now() -
+            startTime
+
         );
 
 
@@ -130,33 +242,62 @@ app.get("/api/search", async (req, res) => {
 
 
         res.status(500).json({
-            error: "Search service unavailable"
+
+            error:
+                "The search service is temporarily unavailable.",
+
+            details:
+                process.env.NODE_ENV ===
+                "development"
+
+                    ? error.message
+
+                    : undefined
+
         });
+
     }
+
 });
 
 
-// Serve website
+// ================================
+// WEBSITE
+// ================================
+
 app.get("*", (req, res) => {
 
     res.sendFile(
+
         path.join(
+
             __dirname,
+
             "index.html"
+
         )
+
     );
 
 });
 
 
-// Start server
+// ================================
+// START SERVER
+// ================================
+
 app.listen(
+
     config.port,
+
     () => {
 
         logger.info(
+
             `THE VAULT SEARCH running on port ${config.port}`
+
         );
 
     }
+
 );
