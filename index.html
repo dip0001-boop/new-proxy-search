@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
 
     <meta
@@ -10,30 +12,52 @@
 
     <meta
         name="description"
-        content="THE VAULT Search - Search the web"
+        content="THE VAULT Search"
     >
 
     <title>THE VAULT SEARCH</title>
 
-    <link rel="stylesheet" href="style.css">
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
 </head>
+
 
 <body>
 
+
     <header class="topbar">
 
-        <div class="brand">
-            <span class="brand-symbol">◆</span>
+        <a
+            class="brand"
+            href="/"
+        >
 
-            <div class="brand-text">
-                <strong>THE VAULT</strong>
-                <span>SEARCH</span>
-            </div>
-        </div>
+            <span class="brand-symbol">
+                ◆
+            </span>
+
+            <span class="brand-name">
+                THE VAULT
+            </span>
+
+            <span class="brand-section">
+                SEARCH
+            </span>
+
+        </a>
+
 
         <div class="connection-status">
+
             <span class="status-dot"></span>
-            <span>ONLINE</span>
+
+            <span>
+                ONLINE
+            </span>
+
         </div>
 
     </header>
@@ -41,7 +65,11 @@
 
     <main>
 
-        <section class="hero">
+
+        <section
+            id="homeSection"
+            class="home-section"
+        >
 
             <div class="hero-brand">
 
@@ -65,24 +93,30 @@
                 class="search-form"
             >
 
-                <div class="search-input-wrapper">
+                <div
+                    class="search-input-wrapper"
+                >
 
-                    <span class="search-icon">
+                    <span
+                        class="search-icon"
+                    >
                         ⌕
                     </span>
+
 
                     <input
                         id="searchInput"
                         type="search"
-                        placeholder="Search the web..."
+                        placeholder="Search the web"
                         autocomplete="off"
                         spellcheck="false"
                     >
 
+
                     <button
                         id="clearButton"
-                        type="button"
                         class="clear-button hidden"
+                        type="button"
                         aria-label="Clear search"
                     >
                         ×
@@ -92,8 +126,8 @@
 
 
                 <button
-                    type="submit"
                     class="search-button"
+                    type="submit"
                 >
                     SEARCH
                 </button>
@@ -101,14 +135,17 @@
             </form>
 
 
-            <div class="quick-searches">
+            <div
+                class="quick-searches"
+            >
 
                 <button
                     type="button"
-                    data-query="latest technology news"
+                    data-query="technology news"
                 >
                     TECHNOLOGY
                 </button>
+
 
                 <button
                     type="button"
@@ -117,12 +154,14 @@
                     NEWS
                 </button>
 
+
                 <button
                     type="button"
                     data-query="video games"
                 >
                     GAMES
                 </button>
+
 
                 <button
                     type="button"
@@ -141,15 +180,25 @@
             class="results-section hidden"
         >
 
-            <div class="results-topbar">
 
-                <div class="results-heading">
+            <div
+                class="results-toolbar"
+            >
 
-                    <h2 id="resultsTitle">
+                <div
+                    class="results-heading"
+                >
+
+                    <h2
+                        id="resultsTitle"
+                    >
                         Search Results
                     </h2>
 
-                    <p id="resultsMeta">
+
+                    <p
+                        id="resultsMeta"
+                    >
                         Ready
                     </p>
 
@@ -172,7 +221,10 @@
                 class="loading-state hidden"
             >
 
-                <div class="loading-spinner"></div>
+                <div
+                    class="loading-spinner"
+                ></div>
+
 
                 <span>
                     SEARCHING THE WEB...
@@ -186,17 +238,24 @@
                 class="message-state hidden"
             >
 
-                <div class="message-icon">
+                <div
+                    class="message-icon"
+                >
                     !
                 </div>
+
 
                 <h2>
                     Search unavailable
                 </h2>
 
-                <p id="errorMessage">
+
+                <p
+                    id="errorMessage"
+                >
                     Something went wrong.
                 </p>
+
 
                 <button
                     id="retryButton"
@@ -213,13 +272,17 @@
                 class="message-state hidden"
             >
 
-                <div class="message-icon">
+                <div
+                    class="message-icon"
+                >
                     ⌕
                 </div>
+
 
                 <h2>
                     No results found
                 </h2>
+
 
                 <p>
                     Try using different search terms.
@@ -233,6 +296,37 @@
                 class="results-container"
             ></div>
 
+
+            <nav
+                id="pagination"
+                class="pagination hidden"
+                aria-label="Search pages"
+            >
+
+                <button
+                    id="previousPage"
+                    type="button"
+                >
+                    ← PREVIOUS
+                </button>
+
+
+                <span
+                    id="pageNumber"
+                >
+                    PAGE 1
+                </span>
+
+
+                <button
+                    id="nextPage"
+                    type="button"
+                >
+                    NEXT →
+                </button>
+
+            </nav>
+
         </section>
 
     </main>
@@ -244,14 +338,19 @@
             THE VAULT SEARCH
         </span>
 
+
         <span>
-            SECURE SEARCH INTERFACE
+            POWERED BY WEB SEARCH
         </span>
 
     </footer>
 
 
-    <script src="script.js"></script>
+    <script
+        src="script.js"
+    ></script>
+
 
 </body>
+
 </html>
