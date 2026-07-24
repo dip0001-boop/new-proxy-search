@@ -2,28 +2,44 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const robotsParser = require("robots-parser");
 
-const database = require("./database");
-const crawlQueue = require("./crawlQueue");
-const crawlerState = require("./crawlerState");
-const config = require("./config");
+const database =
+    require("./database");
+
+const crawlQueue =
+    require("./crawlQueue");
+
+const crawlerState =
+    require("./crawlerState");
+
+const config =
+    require("./config");
+
 
 const USER_AGENT =
     "TheVaultSearchBot/1.0";
 
-const robotsCache = new Map();
+
+const robotsCache =
+    new Map();
+
 
 const MAX_PAGES =
     config.crawler.maxPagesPerRun;
 
+
 const REQUEST_DELAY =
     config.crawler.requestDelay;
+
 
 const MAX_PAGE_SIZE =
     config.crawler.maxPageSize;
 
 
+const WORKER_COUNT =
+    15;
+
+
 const seeds = [
-    "https://en.wikipedia.org/wiki/Main_Page",
     "https://developer.mozilla.org/en-US/",
     "https://www.mozilla.org/en-US/",
     "https://www.w3.org/",
@@ -33,21 +49,58 @@ const seeds = [
 ];
 
 
+function sleep(ms) {
+    return new Promise(
+        resolve =>
+            setTimeout(
+                resolve,
+                ms
+            )
+    );
+}
+
+
 function normalizeUrl(rawUrl) {
     try {
-        const url = new URL(rawUrl);
+        const url =
+            new URL(
+                rawUrl
+            );
 
         if (
-            url.protocol !== "http:" &&
-            url.protocol !== "https:"
+            url.protocol !==
+                "http:" &&
+            url.protocol !==
+                "https:"
         ) {
             return null;
         }
 
-        url.hash = "";
+        url.hash =
+            "";
 
         url.hostname =
             url.hostname.toLowerCase();
+
+        /*
+            Remove default ports.
+        */
+
+        if (
+            (
+                url.protocol ===
+                    "http:" &&
+                url.port === "80"
+            ) ||
+            (
+                url.protocol ===
+                    "https:" &&
+                url.port === "443"
+            )
+        ) {
+            url.port =
+                "";
+        }
 
         return url.toString();
 
@@ -59,23 +112,34 @@ function normalizeUrl(rawUrl) {
 
 function addUrl(url) {
     const normalized =
-        normalizeUrl(url);
+        normalizeUrl(
+            url
+        );
 
-    if (normalized) {
-        crawlQueue.add(normalized);
+    if (
+        normalized
+    ) {
+        crawlQueue.add(
+            normalized
+        );
     }
 }
 
 
 async function canCrawl(url) {
     const parsed =
-        new URL(url);
+        new URL(
+            url
+        );
 
     const origin =
         parsed.origin;
 
+
     if (
-        !robotsCache.has(origin)
+        !robotsCache.has(
+            origin
+        )
     ) {
         try {
             const robotsUrl =
@@ -87,6 +151,12 @@ async function canCrawl(url) {
                     {
                         timeout: 8000,
 
+                        maxContentLength:
+                            1024 * 1024,
+
+                        maxBodyLength:
+                            1024 * 1024,
+
                         headers: {
                             "User-Agent":
                                 USER_AGENT
@@ -94,18 +164,23 @@ async function canCrawl(url) {
 
                         validateStatus:
                             status =>
-                                status >= 200 &&
+                                status >=
+                                    200 &&
                                 status < 500
                     }
                 );
 
+
             const robots =
                 robotsParser(
                     robotsUrl,
-                    response.status === 200
+
+                    response.status ===
+                        200
                         ? response.data
                         : ""
                 );
+
 
             robotsCache.set(
                 origin,
@@ -120,12 +195,19 @@ async function canCrawl(url) {
         }
     }
 
-    const robots =
-        robotsCache.get(origin);
 
-    if (!robots) {
+    const robots =
+        robotsCache.get(
+            origin
+        );
+
+
+    if (
+        !robots
+    ) {
         return true;
     }
+
 
     return (
         robots.isAllowed(
@@ -137,20 +219,35 @@ async function canCrawl(url) {
 
 
 function cleanText(text) {
-    return text
-        .replace(/\s+/g, " ")
+    return String(
+        text || ""
+    )
+        .replace(
+            /\s+/g,
+            " "
+        )
         .trim()
-        .slice(0, 100000);
+        .slice(
+            0,
+            100000
+        );
 }
 
 
-function extractPage(html, url) {
+function extractPage(
+    html,
+    url
+) {
     const $ =
-        cheerio.load(html);
+        cheerio.load(
+            html
+        );
+
 
     $(
-        "script, style, noscript, svg, iframe, nav, footer, header"
+        "script, style, noscript, svg, iframe, nav, footer, header, form"
     ).remove();
+
 
     const title =
         $("title")
@@ -158,26 +255,55 @@ function extractPage(html, url) {
             .text()
             .trim();
 
+
     const description =
-        $('meta[name="description"]')
-            .attr("content") ||
-        $('meta[property="og:description"]')
-            .attr("content") ||
+        $(
+            'meta[name="description"]'
+        )
+            .attr(
+                "content"
+            ) ||
+
+        $(
+            'meta[property="og:description"]'
+        )
+            .attr(
+                "content"
+            ) ||
+
         "";
+
 
     const content =
         cleanText(
-            $("body").text()
+            $("body")
+                .text()
         );
 
-    const links = [];
+
+    const links =
+        new Set();
+
 
     $("a[href]").each(
-        (_, element) => {
+        (
+            _,
+            element
+        ) => {
             try {
                 const href =
                     $(element)
-                        .attr("href");
+                        .attr(
+                            "href"
+                        );
+
+
+                if (
+                    !href
+                ) {
+                    return;
+                }
+
 
                 const absolute =
                     normalizeUrl(
@@ -187,17 +313,24 @@ function extractPage(html, url) {
                         ).toString()
                     );
 
-                if (absolute) {
-                    links.push(
+
+                if (
+                    absolute
+                ) {
+                    links.add(
                         absolute
                     );
                 }
 
             } catch {
-                // Ignore bad links
+                /*
+                    Ignore malformed
+                    links.
+                */
             }
         }
     );
+
 
     return {
         title:
@@ -211,26 +344,34 @@ function extractPage(html, url) {
 
         content,
 
-        links
+        links:
+            Array.from(
+                links
+            )
     };
 }
 
 
-async function crawlPage(item) {
+async function crawlPage(
+    item
+) {
     const url =
         item.url;
 
-    crawlQueue.markCrawling(
-        item.id
-    );
 
     crawlerState.processed();
 
+
     try {
         const allowed =
-            await canCrawl(url);
+            await canCrawl(
+                url
+            );
 
-        if (!allowed) {
+
+        if (
+            !allowed
+        ) {
             crawlQueue.markComplete(
                 item.id
             );
@@ -238,15 +379,28 @@ async function crawlPage(item) {
             return;
         }
 
+
         console.log(
             `CRAWLING: ${url}`
         );
+
 
         const response =
             await axios.get(
                 url,
                 {
-                    timeout: 15000,
+                    timeout:
+                        20000,
+
+                    /*
+                        Keep the configured
+                        maximum size limit.
+
+                        This protects the
+                        server from enormous
+                        responses while still
+                        allowing large pages.
+                    */
 
                     maxContentLength:
                         MAX_PAGE_SIZE,
@@ -267,20 +421,25 @@ async function crawlPage(item) {
 
                     validateStatus:
                         status =>
-                            status >= 200 &&
+                            status >=
+                                200 &&
                             status < 300
                 }
             );
+
 
         const contentType =
             response.headers[
                 "content-type"
             ] || "";
 
+
         if (
-            !contentType.includes(
-                "text/html"
-            )
+            !contentType
+                .toLowerCase()
+                .includes(
+                    "text/html"
+                )
         ) {
             crawlQueue.markComplete(
                 item.id
@@ -288,6 +447,7 @@ async function crawlPage(item) {
 
             return;
         }
+
 
         const page =
             extractPage(
@@ -295,8 +455,10 @@ async function crawlPage(item) {
                 url
             );
 
+
         if (
-            page.content.length < 50
+            page.content.length <
+            50
         ) {
             crawlQueue.markComplete(
                 item.id
@@ -305,50 +467,66 @@ async function crawlPage(item) {
             return;
         }
 
+
         const domain =
             new URL(
                 url
             ).hostname;
 
-        database.savePage({
-            url,
-            title:
-                page.title,
 
-            description:
-                page.description,
+        database.savePage(
+            {
+                url,
 
-            content:
-                page.content,
+                title:
+                    page.title,
 
-            domain
-        });
+                description:
+                    page.description,
+
+                content:
+                    page.content,
+
+                domain
+            }
+        );
+
 
         crawlerState.indexed();
+
 
         for (
             const link
             of page.links
         ) {
-            addUrl(link);
+            addUrl(
+                link
+            );
         }
+
 
         crawlQueue.markComplete(
             item.id
         );
 
+
         console.log(
             `INDEXED: ${url}`
         );
 
-    } catch (error) {
+
+    } catch (
+        error
+    ) {
         console.log(
             `FAILED: ${url} - ${error.message}`
         );
 
+
         crawlQueue.markFailed(
             item.id
         );
+
 
         crawlerState.failed(
             error.message
@@ -357,9 +535,88 @@ async function crawlPage(item) {
 }
 
 
+async function worker(
+    workerId,
+    processedCounter
+) {
+    console.log(
+        `Crawler worker ${workerId} started.`
+    );
+
+
+    while (
+        true
+    ) {
+        if (
+            processedCounter.count >=
+            MAX_PAGES
+        ) {
+            break;
+        }
+
+
+        const item =
+            crawlQueue.getNext();
+
+
+        if (
+            !item
+        ) {
+            /*
+                Give other workers
+                a moment to discover
+                more links before
+                stopping.
+            */
+
+            await sleep(
+                500
+            );
+
+
+            const pending =
+                crawlQueue.getPendingCount();
+
+
+            if (
+                pending === 0
+            ) {
+                break;
+            }
+
+
+            continue;
+        }
+
+
+        processedCounter.count++;
+
+
+        await crawlPage(
+            item
+        );
+
+
+        if (
+            REQUEST_DELAY > 0
+        ) {
+            await sleep(
+                REQUEST_DELAY
+            );
+        }
+    }
+
+
+    console.log(
+        `Crawler worker ${workerId} finished.`
+    );
+}
+
+
 async function startCrawler() {
     if (
-        crawlerState.get().running
+        crawlerState.get()
+            .running
     ) {
         console.log(
             "Crawler already running."
@@ -368,55 +625,66 @@ async function startCrawler() {
         return;
     }
 
+
     crawlerState.start();
+
 
     try {
         crawlQueue.resetStuck();
+
 
         crawlQueue.addMany(
             seeds
         );
 
-        let processed = 0;
 
-        while (
-            processed < MAX_PAGES
+        const processedCounter =
+            {
+                count: 0
+            };
+
+
+        const workers =
+            [];
+
+
+        for (
+            let i = 1;
+            i <= WORKER_COUNT;
+            i++
         ) {
-            const item =
-                crawlQueue.getNext();
-
-            if (!item) {
-                console.log(
-                    "Crawl queue is empty."
-                );
-
-                break;
-            }
-
-            await crawlPage(
-                item
-            );
-
-            processed++;
-
-            await new Promise(
-                resolve =>
-                    setTimeout(
-                        resolve,
-                        REQUEST_DELAY
-                    )
+            workers.push(
+                worker(
+                    i,
+                    processedCounter
+                )
             );
         }
 
-    } catch (error) {
+
+        await Promise.all(
+            workers
+        );
+
+
+        console.log(
+            "Crawler run complete."
+        );
+
+
+    } catch (
+        error
+    ) {
         crawlerState.failed(
             error.message
         );
+
 
         console.error(
             "Crawler error:",
             error
         );
+
 
     } finally {
         crawlerState.finish();
