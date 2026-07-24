@@ -1,187 +1,98 @@
-const express =
-    require("express");
+const express = require("express");
+const path = require("path");
+const axios = require("axios");
+const cheerio = require("cheerio");
+const compression = require("compression");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
-const path =
-    require("path");
+const config = require("./config");
+const cache = require("./cache");
+const database = require("./database");
+const crawlQueue = require("./crawlQueue");
+const crawlerState = require("./crawlerState");
+const searchEngine = require("./searchProviders");
+const scheduler = require("./scheduler");
 
-const axios =
-    require("axios");
-
-const cheerio =
-    require("cheerio");
-
-const compression =
-    require("compression");
-
-const cors =
-    require("cors");
-
-const helmet =
-    require("helmet");
-
-const rateLimit =
-    require("express-rate-limit");
-
-
-const config =
-    require("./config");
-
-const cache =
-    require("./cache");
-
-const database =
-    require("./database");
-
-const crawlQueue =
-    require("./crawlQueue");
-
-const crawlerState =
-    require("./crawlerState");
-
-const searchEngine =
-    require("./searchProviders");
-
-const scheduler =
-    require("./scheduler");
-
-
-const app =
-    express();
-
+const app = express();
 
 const USER_AGENT =
     "Mozilla/5.0 (compatible; TheVaultProxy/1.0)";
 
-
-app.set(
-    "trust proxy",
-    1
-);
-
-
-app.disable(
-    "x-powered-by"
-);
-
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
 
 app.use(
     helmet({
-        contentSecurityPolicy:
-            false
+        contentSecurityPolicy: false
     })
 );
 
-
-app.use(
-    cors()
-);
-
-
-app.use(
-    compression()
-);
-
+app.use(cors());
+app.use(compression());
 
 app.use(
     express.json({
-        limit:
-            "1mb"
+        limit: "1mb"
     })
 );
-
 
 app.use(
     express.urlencoded({
-        extended:
-            false,
-
-        limit:
-            "1mb"
+        extended: false,
+        limit: "1mb"
     })
 );
 
+const apiLimiter = rateLimit({
+    windowMs: config.rateLimit.windowMs,
+    max: config.rateLimit.maxRequests,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        error:
+            "Too many requests. Please try again later."
+    }
+});
 
-/* =================================
-   API RATE LIMIT
-================================= */
-
-const apiLimiter =
-    rateLimit({
-        windowMs:
-            config.rateLimit
-                .windowMs,
-
-        max:
-            config.rateLimit
-                .maxRequests,
-
-        standardHeaders:
-            true,
-
-        legacyHeaders:
-            false,
-
-        message: {
-            error:
-                "Too many requests. Please try again later."
-        }
-    });
-
-
-app.use(
-    "/api/",
-    apiLimiter
-);
+app.use("/api/", apiLimiter);
 
 
 /* =================================
-   URL VALIDATION
+   URL HELPERS
 ================================= */
 
-function getTargetURL(
-    rawURL
-) {
+function getTargetURL(rawURL) {
     try {
-        const parsed =
-            new URL(
-                rawURL
-            );
+        const parsed = new URL(
+            String(rawURL || "")
+        );
 
         if (
-            parsed.protocol !==
-                "http:" &&
-
-            parsed.protocol !==
-                "https:"
+            parsed.protocol !== "http:" &&
+            parsed.protocol !== "https:"
         ) {
             return null;
         }
 
         return parsed;
-
     } catch {
         return null;
     }
 }
 
 
-function makeProxyURL(
-    rawURL,
-    baseURL
-) {
+function makeProxyURL(rawURL, baseURL) {
     try {
-        const absolute =
-            new URL(
-                rawURL,
-                baseURL
-            );
+        const absolute = new URL(
+            rawURL,
+            baseURL
+        );
 
         if (
-            absolute.protocol !==
-                "http:" &&
-
-            absolute.protocol !==
-                "https:"
+            absolute.protocol !== "http:" &&
+            absolute.protocol !== "https:"
         ) {
             return rawURL;
         }
@@ -192,17 +103,13 @@ function makeProxyURL(
                 absolute.toString()
             )
         );
-
     } catch {
         return rawURL;
     }
 }
 
 
-function rewriteCSSURLs(
-    css,
-    baseURL
-) {
+function rewriteCSSURLs(css, baseURL) {
     return css.replace(
         /url\(\s*(['"]?)(.*?)\1\s*\)/gi,
         (
@@ -215,66 +122,38 @@ function rewriteCSSURLs(
 
             if (
                 !trimmed ||
-                trimmed.startsWith(
-                    "data:"
-                ) ||
-                trimmed.startsWith(
-                    "blob:"
-                ) ||
-                trimmed.startsWith(
-                    "#"
-                )
+                trimmed.startsWith("data:") ||
+                trimmed.startsWith("blob:") ||
+                trimmed.startsWith("#")
             ) {
                 return match;
             }
 
-            const proxied =
-                makeProxyURL(
-                    trimmed,
-                    baseURL
-                );
-
-            return `url("${proxied}")`;
+            return `url("${makeProxyURL(
+                trimmed,
+                baseURL
+            )}")`;
         }
     );
 }
 
 
-function rewriteHTML(
-    html,
-    pageURL
-) {
-    const $ =
-        cheerio.load(
-            html,
-            {
-                decodeEntities:
-                    false
-            }
-        );
+function rewriteHTML(html, pageURL) {
+    const $ = cheerio.load(
+        html,
+        {
+            decodeEntities: false
+        }
+    );
 
+    $("base").remove();
 
-    $(
-        "base"
-    ).remove();
-
-
-    $(
-        "[href]"
-    ).each(
-        (
-            _,
-            element
-        ) => {
+    $("[href]").each(
+        (_, element) => {
             const href =
-                $(element)
-                    .attr(
-                        "href"
-                    );
+                $(element).attr("href");
 
-            if (
-                href
-            ) {
+            if (href) {
                 $(element).attr(
                     "href",
                     makeProxyURL(
@@ -286,23 +165,12 @@ function rewriteHTML(
         }
     );
 
-
-    $(
-        "[src]"
-    ).each(
-        (
-            _,
-            element
-        ) => {
+    $("[src]").each(
+        (_, element) => {
             const src =
-                $(element)
-                    .attr(
-                        "src"
-                    );
+                $(element).attr("src");
 
-            if (
-                src
-            ) {
+            if (src) {
                 $(element).attr(
                     "src",
                     makeProxyURL(
@@ -314,23 +182,12 @@ function rewriteHTML(
         }
     );
 
-
-    $(
-        "[action]"
-    ).each(
-        (
-            _,
-            element
-        ) => {
+    $("[action]").each(
+        (_, element) => {
             const action =
-                $(element)
-                    .attr(
-                        "action"
-                    );
+                $(element).attr("action");
 
-            if (
-                action
-            ) {
+            if (action) {
                 $(element).attr(
                     "action",
                     makeProxyURL(
@@ -342,23 +199,12 @@ function rewriteHTML(
         }
     );
 
-
-    $(
-        "[style]"
-    ).each(
-        (
-            _,
-            element
-        ) => {
+    $("[style]").each(
+        (_, element) => {
             const style =
-                $(element)
-                    .attr(
-                        "style"
-                    );
+                $(element).attr("style");
 
-            if (
-                style
-            ) {
+            if (style) {
                 $(element).attr(
                     "style",
                     rewriteCSSURLs(
@@ -370,21 +216,12 @@ function rewriteHTML(
         }
     );
 
-
-    $(
-        "style"
-    ).each(
-        (
-            _,
-            element
-        ) => {
+    $("style").each(
+        (_, element) => {
             const css =
-                $(element)
-                    .html();
+                $(element).html();
 
-            if (
-                css
-            ) {
+            if (css) {
                 $(element).html(
                     rewriteCSSURLs(
                         css,
@@ -395,44 +232,32 @@ function rewriteHTML(
         }
     );
 
-
-    $(
-        "meta[http-equiv='refresh']"
-    ).each(
-        (
-            _,
-            element
-        ) => {
+    $("meta[http-equiv='refresh']").each(
+        (_, element) => {
             const content =
-                $(element)
-                    .attr(
-                        "content"
-                    );
+                $(element).attr("content");
 
-            if (
-                content
-            ) {
-                const match =
-                    content.match(
-                        /^(\s*\d+\s*;\s*url=)(.*)$/i
-                    );
+            if (!content) {
+                return;
+            }
 
-                if (
-                    match
-                ) {
-                    $(element).attr(
-                        "content",
-                        match[1] +
-                        makeProxyURL(
-                            match[2],
-                            pageURL
-                        )
-                    );
-                }
+            const match =
+                content.match(
+                    /^(\s*\d+\s*;\s*url=)(.*)$/i
+                );
+
+            if (match) {
+                $(element).attr(
+                    "content",
+                    match[1] +
+                    makeProxyURL(
+                        match[2],
+                        pageURL
+                    )
+                );
             }
         }
     );
-
 
     return (
         "<!DOCTYPE html>" +
@@ -442,7 +267,7 @@ function rewriteHTML(
 
 
 /* =================================
-   PROXY ROUTE
+   PROXY
 ================================= */
 
 app.get(
@@ -456,9 +281,7 @@ app.get(
                 req.query.url
             );
 
-        if (
-            !target
-        ) {
+        if (!target) {
             return res
                 .status(400)
                 .send(
@@ -466,12 +289,10 @@ app.get(
                 );
         }
 
-
         try {
             console.log(
                 `PROXY: ${target.toString()}`
             );
-
 
             const response =
                 await axios.get(
@@ -506,34 +327,26 @@ app.get(
 
                         validateStatus:
                             status =>
-                                status >=
-                                    200 &&
-                                status <
-                                    400
+                                status >= 200 &&
+                                status < 400
                     }
                 );
 
-
             const contentType =
                 String(
-                    response
-                        .headers[
-                            "content-type"
-                        ] ||
-                        ""
+                    response.headers[
+                        "content-type"
+                    ] || ""
                 );
-
 
             res.status(
                 response.status
             );
 
-
             res.set(
                 "X-Vault-Proxy",
                 "THE VAULT"
             );
-
 
             if (
                 contentType.includes(
@@ -549,23 +362,15 @@ app.get(
                             "utf8"
                         );
 
-
-                const rewritten =
-                    rewriteHTML(
-                        html,
-                        target.toString()
-                    );
-
-
                 return res
-                    .type(
-                        "html"
-                    )
+                    .type("html")
                     .send(
-                        rewritten
+                        rewriteHTML(
+                            html,
+                            target.toString()
+                        )
                     );
             }
-
 
             if (
                 contentType.includes(
@@ -581,11 +386,8 @@ app.get(
                             "utf8"
                         );
 
-
                 return res
-                    .type(
-                        "css"
-                    )
+                    .type("css")
                     .send(
                         rewriteCSSURLs(
                             css,
@@ -594,13 +396,11 @@ app.get(
                     );
             }
 
-
             res.set(
                 "Content-Type",
                 contentType ||
                     "application/octet-stream"
             );
-
 
             return res.send(
                 Buffer.from(
@@ -608,23 +408,25 @@ app.get(
                 )
             );
 
-        } catch (
-            error
-        ) {
+        } catch (error) {
             console.error(
                 "PROXY ERROR:",
                 error.message
             );
 
-
             return res
                 .status(502)
                 .send(
                     `
-                    <h1>THE VAULT PROXY ERROR</h1>
-                    <p>${String(
-                        error.message
-                    )}</p>
+                    <h1>
+                        THE VAULT PROXY ERROR
+                    </h1>
+
+                    <p>
+                        ${String(
+                            error.message
+                        )}
+                    </p>
                     `
                 );
         }
@@ -679,21 +481,14 @@ app.get(
         const startTime =
             Date.now();
 
-
         try {
             const query =
                 typeof req.query.q ===
                 "string"
-
-                    ? req.query.q
-                        .trim()
-
+                    ? req.query.q.trim()
                     : "";
 
-
-            if (
-                !query
-            ) {
+            if (!query) {
                 return res
                     .status(400)
                     .json({
@@ -702,11 +497,9 @@ app.get(
                     });
             }
 
-
             if (
                 query.length >
-                config.security
-                    .maxQueryLength
+                config.security.maxQueryLength
             ) {
                 return res
                     .status(400)
@@ -715,7 +508,6 @@ app.get(
                             "Search query is too long."
                     });
             }
-
 
             const page =
                 Math.max(
@@ -726,44 +518,27 @@ app.get(
                     1
                 );
 
-
             const limit =
-                config.search
-                    .resultsPerPage;
-
+                config.search.resultsPerPage;
 
             const cacheKey =
-                "local:" +
-                query
-                    .toLowerCase()
-                    .replace(
-                        /\s+/g,
-                        " "
-                    ) +
+                `local:${query.toLowerCase()}` +
                 `:page:${page}`;
-
 
             const cached =
                 cache.get(
                     cacheKey
                 );
 
-
-            if (
-                cached
-            ) {
+            if (cached) {
                 return res.json({
                     ...cached,
-
-                    cached:
-                        true,
-
+                    cached: true,
                     time:
                         Date.now() -
                         startTime
                 });
             }
-
 
             const search =
                 searchEngine.search(
@@ -773,7 +548,6 @@ app.get(
                         page
                     }
                 );
-
 
             const response = {
                 query,
@@ -787,8 +561,7 @@ app.get(
                     search.results,
 
                 count:
-                    search.results
-                        .length,
+                    search.results.length,
 
                 cached:
                     false,
@@ -798,27 +571,21 @@ app.get(
                     startTime
             };
 
-
             cache.set(
                 cacheKey,
                 response,
-                config.search
-                    .cacheTime
+                config.search.cacheTime
             );
-
 
             return res.json(
                 response
             );
 
-        } catch (
-            error
-        ) {
+        } catch (error) {
             console.error(
                 "SEARCH ERROR:",
                 error
             );
-
 
             return res
                 .status(500)
@@ -870,46 +637,26 @@ app.post(
         res
     ) => {
         if (
-            crawlerState
-                .get()
-                .running
+            crawlerState.get().running
         ) {
             return res.json({
                 status:
-                    "already_running",
-
-                crawler:
-                    crawlerState.get()
+                    "already_running"
             });
         }
-
 
         res.json({
             status:
                 "started"
         });
 
-
-        Promise.resolve()
-            .then(
-                () =>
-                    scheduler
-                        .runCrawler()
-            )
-            .catch(
-                error => {
-                    console.error(
-                        "CRAWLER START ERROR:",
-                        error
-                    );
-                }
-            );
+        scheduler.runCrawler();
     }
 );
 
 
 /* =================================
-   FRONTEND
+   STATIC FILES
 ================================= */
 
 app.use(
@@ -918,6 +665,10 @@ app.use(
     )
 );
 
+
+/* =================================
+   FRONTEND
+================================= */
 
 app.get(
     "*",
@@ -936,60 +687,16 @@ app.get(
 
 
 /* =================================
-   SERVER
+   START
 ================================= */
 
-const server =
-    app.listen(
-        config.port,
-        () => {
-            console.log(
-                `THE VAULT PROXY running on port ${config.port}`
-            );
+app.listen(
+    config.port,
+    () => {
+        console.log(
+            `THE VAULT PROXY running on port ${config.port}`
+        );
 
-
-            scheduler
-                .startScheduler();
-        }
-    );
-
-
-function shutdown() {
-    console.log(
-        "Shutting down THE VAULT PROXY."
-    );
-
-
-    server.close(
-        () => {
-            try {
-                database.close();
-
-            } catch (
-                error
-            ) {
-                console.error(
-                    "Database close error:",
-                    error
-                );
-            }
-
-
-            process.exit(
-                0
-            );
-        }
-    );
-}
-
-
-process.on(
-    "SIGTERM",
-    shutdown
-);
-
-
-process.on(
-    "SIGINT",
-    shutdown
+        scheduler.startScheduler();
+    }
 );
