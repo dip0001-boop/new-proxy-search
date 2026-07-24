@@ -1,9 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="THE VAULT Search - Search the web"
+    >
 
     <title>THE VAULT SEARCH</title>
 
@@ -15,94 +23,235 @@
     <header class="topbar">
 
         <div class="brand">
-            <span class="brand-icon">◆</span>
-            <span>THE VAULT</span>
-            <small>SEARCH</small>
+            <span class="brand-symbol">◆</span>
+
+            <div class="brand-text">
+                <strong>THE VAULT</strong>
+                <span>SEARCH</span>
+            </div>
         </div>
 
-        <div class="status">
+        <div class="connection-status">
             <span class="status-dot"></span>
-            ONLINE
+            <span>ONLINE</span>
         </div>
 
     </header>
+
 
     <main>
 
         <section class="hero">
 
-            <div class="hero-logo">
-                <div class="vault-symbol">◆</div>
-                <h1>THE VAULT</h1>
-                <p>SEARCH THE WEB</p>
+            <div class="hero-brand">
+
+                <div class="hero-symbol">
+                    ◆
+                </div>
+
+                <h1>
+                    THE VAULT
+                </h1>
+
+                <p>
+                    SEARCH THE WEB
+                </p>
+
             </div>
 
-            <form id="searchForm" class="search-box">
 
-                <span class="search-icon">⌕</span>
+            <form
+                id="searchForm"
+                class="search-form"
+            >
 
-                <input
-                    id="searchInput"
-                    type="text"
-                    placeholder="Search the web..."
-                    autocomplete="off"
-                    autofocus
+                <div class="search-input-wrapper">
+
+                    <span class="search-icon">
+                        ⌕
+                    </span>
+
+                    <input
+                        id="searchInput"
+                        type="search"
+                        placeholder="Search the web..."
+                        autocomplete="off"
+                        spellcheck="false"
+                    >
+
+                    <button
+                        id="clearButton"
+                        type="button"
+                        class="clear-button hidden"
+                        aria-label="Clear search"
+                    >
+                        ×
+                    </button>
+
+                </div>
+
+
+                <button
+                    type="submit"
+                    class="search-button"
                 >
-
-                <button type="submit">
                     SEARCH
                 </button>
 
             </form>
 
-            <div class="quick-links">
-                <button onclick="quickSearch('games')">Games</button>
-                <button onclick="quickSearch('technology')">Technology</button>
-                <button onclick="quickSearch('news')">News</button>
-                <button onclick="quickSearch('music')">Music</button>
+
+            <div class="quick-searches">
+
+                <button
+                    type="button"
+                    data-query="latest technology news"
+                >
+                    TECHNOLOGY
+                </button>
+
+                <button
+                    type="button"
+                    data-query="world news"
+                >
+                    NEWS
+                </button>
+
+                <button
+                    type="button"
+                    data-query="video games"
+                >
+                    GAMES
+                </button>
+
+                <button
+                    type="button"
+                    data-query="music"
+                >
+                    MUSIC
+                </button>
+
             </div>
 
         </section>
 
-        <section id="resultsSection" class="results-section hidden">
 
-            <div class="results-header">
+        <section
+            id="resultsSection"
+            class="results-section hidden"
+        >
 
-                <div>
-                    <h2 id="resultsTitle">Search Results</h2>
-                    <p id="resultsInfo"></p>
+            <div class="results-topbar">
+
+                <div class="results-heading">
+
+                    <h2 id="resultsTitle">
+                        Search Results
+                    </h2>
+
+                    <p id="resultsMeta">
+                        Ready
+                    </p>
+
                 </div>
 
-                <button id="newSearchButton">
+
+                <button
+                    id="newSearchButton"
+                    class="new-search-button"
+                    type="button"
+                >
                     NEW SEARCH
                 </button>
 
             </div>
 
-            <div id="loading" class="loading hidden">
+
+            <div
+                id="loadingState"
+                class="loading-state hidden"
+            >
+
                 <div class="loading-spinner"></div>
-                <span>SEARCHING THE WEB...</span>
+
+                <span>
+                    SEARCHING THE WEB...
+                </span>
+
             </div>
 
-            <div id="results"></div>
 
-            <div id="noResults" class="no-results hidden">
-                <div class="empty-icon">⌕</div>
-                <h2>No results found</h2>
-                <p>Try searching for something else.</p>
+            <div
+                id="errorState"
+                class="message-state hidden"
+            >
+
+                <div class="message-icon">
+                    !
+                </div>
+
+                <h2>
+                    Search unavailable
+                </h2>
+
+                <p id="errorMessage">
+                    Something went wrong.
+                </p>
+
+                <button
+                    id="retryButton"
+                    type="button"
+                >
+                    TRY AGAIN
+                </button>
+
             </div>
+
+
+            <div
+                id="emptyState"
+                class="message-state hidden"
+            >
+
+                <div class="message-icon">
+                    ⌕
+                </div>
+
+                <h2>
+                    No results found
+                </h2>
+
+                <p>
+                    Try using different search terms.
+                </p>
+
+            </div>
+
+
+            <div
+                id="resultsContainer"
+                class="results-container"
+            ></div>
 
         </section>
 
     </main>
 
+
     <footer>
-        <span>THE VAULT SEARCH</span>
-        <span>SECURE SEARCH INTERFACE</span>
+
+        <span>
+            THE VAULT SEARCH
+        </span>
+
+        <span>
+            SECURE SEARCH INTERFACE
+        </span>
+
     </footer>
+
 
     <script src="script.js"></script>
 
 </body>
-
 </html>
