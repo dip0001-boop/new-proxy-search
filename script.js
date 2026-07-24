@@ -3,108 +3,90 @@ const searchForm =
         "searchForm"
     );
 
-
 const searchInput =
     document.getElementById(
         "searchInput"
     );
-
 
 const clearButton =
     document.getElementById(
         "clearButton"
     );
 
-
 const homeSection =
     document.getElementById(
         "homeSection"
     );
-
 
 const resultsSection =
     document.getElementById(
         "resultsSection"
     );
 
-
 const resultsTitle =
     document.getElementById(
         "resultsTitle"
     );
-
 
 const resultsMeta =
     document.getElementById(
         "resultsMeta"
     );
 
-
 const loadingState =
     document.getElementById(
         "loadingState"
     );
-
 
 const errorState =
     document.getElementById(
         "errorState"
     );
 
-
 const errorMessage =
     document.getElementById(
         "errorMessage"
     );
-
 
 const emptyState =
     document.getElementById(
         "emptyState"
     );
 
-
 const resultsContainer =
     document.getElementById(
         "resultsContainer"
     );
-
 
 const pagination =
     document.getElementById(
         "pagination"
     );
 
-
 const previousPage =
     document.getElementById(
         "previousPage"
     );
-
 
 const nextPage =
     document.getElementById(
         "nextPage"
     );
 
-
 const pageNumber =
     document.getElementById(
         "pageNumber"
     );
-
 
 const newSearchButton =
     document.getElementById(
         "newSearchButton"
     );
 
-
 const retryButton =
     document.getElementById(
         "retryButton"
     );
-
 
 const quickSearchButtons =
     document.querySelectorAll(
@@ -112,167 +94,34 @@ const quickSearchButtons =
     );
 
 
-let currentQuery =
-    "";
+let currentQuery = "";
+
+let currentPage = 1;
+
+let lastSearchURL = "";
 
 
-let currentPage =
-    1;
+/* =================================
+   HELPERS
+================================= */
 
-
-let activeRequest =
-    0;
-
-
-let currentController =
-    null;
-
-
-function getDisplayURL(
-    url
-) {
+function getDisplayURL(url) {
     try {
         const parsed =
-            new URL(
-                url
-            );
+            new URL(url);
 
-
-        let display =
-            parsed.hostname;
-
-
-        if (
-            parsed.pathname &&
-            parsed.pathname !== "/"
-        ) {
-            display +=
-                parsed.pathname;
-        }
-
-
-        return display;
+        return (
+            parsed.hostname +
+            parsed.pathname
+        );
 
     } catch {
-        return String(
-            url ||
-            ""
-        );
+        return url;
     }
 }
 
 
-function escapeHTML(
-    value
-) {
-    const div =
-        document.createElement(
-            "div"
-        );
-
-
-    div.textContent =
-        String(
-            value ||
-            ""
-        );
-
-
-    return div.innerHTML;
-}
-
-
-function show(
-    element
-) {
-    if (
-        element
-    ) {
-        element.classList
-            .remove(
-                "hidden"
-            );
-    }
-}
-
-
-function hide(
-    element
-) {
-    if (
-        element
-    ) {
-        element.classList
-            .add(
-                "hidden"
-            );
-    }
-}
-
-
-function resetStates() {
-    hide(
-        loadingState
-    );
-
-
-    hide(
-        errorState
-    );
-
-
-    hide(
-        emptyState
-    );
-
-
-    hide(
-        pagination
-    );
-
-
-    resultsContainer
-        .innerHTML =
-        "";
-}
-
-
-function setLoading(
-    loading
-) {
-    if (
-        loading
-    ) {
-        show(
-            loadingState
-        );
-
-
-        hide(
-            errorState
-        );
-
-
-        hide(
-            emptyState
-        );
-
-
-        hide(
-            pagination
-        );
-
-    } else {
-        hide(
-            loadingState
-        );
-    }
-}
-
-
-function getProxyURL(
-    url
-) {
+function getProxyURL(url) {
     return (
         "/proxy?url=" +
         encodeURIComponent(
@@ -282,57 +131,78 @@ function getProxyURL(
 }
 
 
-function displayResults(
-    data
-) {
-    resultsContainer
-        .innerHTML =
+function escapeHTML(value) {
+    const div =
+        document.createElement(
+            "div"
+        );
+
+    div.textContent =
+        value || "";
+
+    return div.innerHTML;
+}
+
+
+function show(element) {
+    element.classList.remove(
+        "hidden"
+    );
+}
+
+
+function hide(element) {
+    element.classList.add(
+        "hidden"
+    );
+}
+
+
+function resetStates() {
+    hide(loadingState);
+
+    hide(errorState);
+
+    hide(emptyState);
+
+    hide(pagination);
+
+    resultsContainer.innerHTML =
+        "";
+}
+
+
+/* =================================
+   DISPLAY RESULTS
+================================= */
+
+function displayResults(data) {
+    resultsContainer.innerHTML =
         "";
 
-
-    const results =
-        Array.isArray(
-            data.results
-        )
-            ? data.results
-            : [];
-
-
     if (
-        results.length ===
-        0
+        !data.results ||
+        data.results.length === 0
     ) {
-        show(
-            emptyState
-        );
-
-
-        hide(
-            pagination
-        );
-
+        show(emptyState);
 
         resultsMeta.textContent =
             "No results found";
 
-
         return;
     }
 
-
     for (
         const result
-        of results
+        of data.results
     ) {
         const article =
             document.createElement(
                 "article"
             );
 
-
         article.className =
             "search-result";
-
 
         const originalURL =
             String(
@@ -340,19 +210,15 @@ function displayResults(
                 ""
             );
 
-
         const proxyURL =
             getProxyURL(
                 originalURL
             );
 
-
-        const title =
+        const safeProxyURL =
             escapeHTML(
-                result.title ||
-                "Untitled page"
+                proxyURL
             );
-
 
         const displayURL =
             escapeHTML(
@@ -361,13 +227,17 @@ function displayResults(
                 )
             );
 
+        const title =
+            escapeHTML(
+                result.title ||
+                "Untitled page"
+            );
 
         const snippet =
             escapeHTML(
                 result.snippet ||
                 "No description available."
             );
-
 
         article.innerHTML = `
             <div class="result-url">
@@ -376,12 +246,8 @@ function displayResults(
 
             <h3>
                 <a
-                    href="${escapeHTML(
-                        proxyURL
-                    )}"
-                    data-proxy-url="${escapeHTML(
-                        originalURL
-                    )}"
+                    href="${safeProxyURL}"
+                    class="proxy-result-link"
                 >
                     ${title}
                 </a>
@@ -392,284 +258,122 @@ function displayResults(
             </p>
         `;
 
-
-        const link =
-            article.querySelector(
-                "a"
-            );
-
-
-        link.addEventListener(
-            "click",
-            event => {
-                event.preventDefault();
-
-
-                const url =
-                    link.dataset
-                        .proxyUrl;
-
-
-                if (
-                    url
-                ) {
-                    window.location.href =
-                        getProxyURL(
-                            url
-                        );
-                }
-            }
+        resultsContainer.appendChild(
+            article
         );
-
-
-        resultsContainer
-            .appendChild(
-                article
-            );
     }
 
-
     resultsMeta.textContent =
-        `${results.length} results`;
-
+        `${data.count || 0} results`;
 
     pageNumber.textContent =
         `PAGE ${currentPage}`;
 
-
     if (
-        currentPage >
-        1
+        currentPage > 1
     ) {
-        show(
-            previousPage
-        );
+        previousPage.disabled =
+            false;
+
+        show(previousPage);
 
     } else {
-        hide(
-            previousPage
-        );
+        previousPage.disabled =
+            true;
     }
 
-
-    if (
-        results.length >=
-        10
-    ) {
-        show(
-            nextPage
-        );
-
-    } else {
-        hide(
-            nextPage
-        );
-    }
-
-
-    show(
-        pagination
-    );
+    show(pagination);
 }
 
+
+/* =================================
+   SEARCH
+================================= */
 
 async function performSearch(
     query,
     page = 1
 ) {
     const cleanQuery =
-        String(
-            query ||
-            ""
-        )
-            .trim();
-
+        query.trim();
 
     if (
         !cleanQuery
     ) {
-        searchInput.focus();
-
         return;
     }
-
-
-    if (
-        currentController
-    ) {
-        currentController
-            .abort();
-    }
-
-
-    currentController =
-        new AbortController();
-
-
-    const requestID =
-        ++activeRequest;
-
 
     currentQuery =
         cleanQuery;
 
-
     currentPage =
-        Math.max(
-            Number(
-                page
-            ) || 1,
-            1
-        );
+        page;
 
+    lastSearchURL =
+        `/api/search?q=${encodeURIComponent(
+            cleanQuery
+        )}&page=${page}`;
 
-    const searchURL =
-        `/api/search?q=${
-            encodeURIComponent(
-                cleanQuery
-            )
-        }&page=${
-            currentPage
-        }`;
+    hide(homeSection);
 
-
-    hide(
-        homeSection
-    );
-
-
-    show(
-        resultsSection
-    );
-
+    show(resultsSection);
 
     resetStates();
 
-
-    setLoading(
-        true
-    );
-
+    show(loadingState);
 
     resultsTitle.textContent =
         `"${cleanQuery}"`;
 
-
     resultsMeta.textContent =
         "Searching...";
 
+    window.scrollTo({
+        top: 0,
+        behavior: "instant"
+    });
 
     try {
         const response =
             await fetch(
-                searchURL,
-                {
-                    signal:
-                        currentController
-                            .signal,
-
-                    headers: {
-                        Accept:
-                            "application/json"
-                    }
-                }
+                lastSearchURL
             );
-
 
         if (
             !response.ok
         ) {
-            let message =
-                `Server returned ${
-                    response.status
-                }`;
-
-
-            try {
-                const errorData =
-                    await response
-                        .json();
-
-
-                if (
-                    errorData.error
-                ) {
-                    message =
-                        errorData.error;
-                }
-
-            } catch {
-                // Ignore invalid JSON
-            }
-
-
             throw new Error(
-                message
+                `Server returned ${response.status}`
             );
         }
 
-
         const data =
-            await response
-                .json();
+            await response.json();
 
-
-        if (
-            requestID !==
-            activeRequest
-        ) {
-            return;
-        }
-
-
-        setLoading(
-            false
-        );
-
+        hide(loadingState);
 
         displayResults(
             data
         );
 
-    } catch (
-        error
-    ) {
-        if (
-            error.name ===
-            "AbortError"
-        ) {
-            return;
-        }
+        window.scrollTo({
+            top: 0,
+            behavior: "smooth"
+        });
 
-
-        if (
-            requestID !==
-            activeRequest
-        ) {
-            return;
-        }
-
-
+    } catch (error) {
         console.error(
             "SEARCH ERROR:",
             error
         );
 
-
-        setLoading(
-            false
-        );
-
+        hide(loadingState);
 
         errorMessage.textContent =
             error.message ||
             "The search request failed.";
 
-
-        show(
-            errorState
-        );
-
+        show(errorState);
 
         resultsMeta.textContent =
             "Search failed";
@@ -677,11 +381,14 @@ async function performSearch(
 }
 
 
+/* =================================
+   SEARCH FORM
+================================= */
+
 searchForm.addEventListener(
     "submit",
     event => {
         event.preventDefault();
-
 
         performSearch(
             searchInput.value,
@@ -691,21 +398,20 @@ searchForm.addEventListener(
 );
 
 
+/* =================================
+   INPUT
+================================= */
+
 searchInput.addEventListener(
     "input",
     () => {
         if (
-            searchInput.value
-                .length > 0
+            searchInput.value.length > 0
         ) {
-            show(
-                clearButton
-            );
+            show(clearButton);
 
         } else {
-            hide(
-                clearButton
-            );
+            hide(clearButton);
         }
     }
 );
@@ -717,58 +423,56 @@ clearButton.addEventListener(
         searchInput.value =
             "";
 
-
-        hide(
-            clearButton
-        );
-
+        hide(clearButton);
 
         searchInput.focus();
     }
 );
 
+
+/* =================================
+   NEW SEARCH
+================================= */
 
 newSearchButton.addEventListener(
     "click",
     () => {
-        hide(
-            resultsSection
-        );
+        hide(resultsSection);
 
-
-        show(
-            homeSection
-        );
-
+        show(homeSection);
 
         searchInput.value =
             "";
 
-
         searchInput.focus();
-
 
         currentQuery =
             "";
 
-
         currentPage =
             1;
+
+        window.scrollTo({
+            top: 0,
+            behavior: "smooth"
+        });
     }
 );
 
+
+/* =================================
+   PAGINATION
+================================= */
 
 previousPage.addEventListener(
     "click",
     () => {
         if (
-            currentPage >
-            1
+            currentPage > 1
         ) {
             performSearch(
                 currentQuery,
-                currentPage -
-                1
+                currentPage - 1
             );
         }
     }
@@ -780,12 +484,15 @@ nextPage.addEventListener(
     () => {
         performSearch(
             currentQuery,
-            currentPage +
-            1
+            currentPage + 1
         );
     }
 );
 
+
+/* =================================
+   RETRY
+================================= */
 
 retryButton.addEventListener(
     "click",
@@ -798,26 +505,28 @@ retryButton.addEventListener(
 );
 
 
-quickSearchButtons
-    .forEach(
-        button => {
-            button.addEventListener(
-                "click",
-                () => {
-                    const query =
-                        button.dataset
-                            .query;
+/* =================================
+   QUICK SEARCHES
+================================= */
 
+quickSearchButtons.forEach(
+    button => {
+        button.addEventListener(
+            "click",
+            () => {
+                const query =
+                    button.dataset.query;
 
-                    searchInput.value =
-                        query;
+                searchInput.value =
+                    query;
 
+                show(clearButton);
 
-                    performSearch(
-                        query,
-                        1
-                    );
-                }
-            );
-        }
-    );
+                performSearch(
+                    query,
+                    1
+                );
+            }
+        );
+    }
+);
