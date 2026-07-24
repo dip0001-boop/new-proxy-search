@@ -1,11 +1,3 @@
-const DEFAULT_TTL_SECONDS =
-    300;
-
-
-const MAX_CACHE_ENTRIES =
-    1000;
-
-
 const cache =
     new Map();
 
@@ -13,16 +5,6 @@ const cache =
 function get(
     key
 ) {
-
-    if (
-        typeof key !==
-        "string"
-    ) {
-
-        return null;
-
-    }
-
 
     const item =
         cache.get(
@@ -40,14 +22,15 @@ function get(
 
 
     if (
+
         Date.now() >=
         item.expiresAt
+
     ) {
 
         cache.delete(
             key
         );
-
 
         return null;
 
@@ -61,72 +44,22 @@ function get(
 
 function set(
     key,
-
     value,
-
-    ttlSeconds =
-        DEFAULT_TTL_SECONDS
-
+    ttlSeconds = 120
 ) {
-
-    if (
-        typeof key !==
-        "string"
-    ) {
-
-        return false;
-
-    }
-
 
     const ttl =
         Math.max(
-
-            1,
 
             Number(
                 ttlSeconds
             ) ||
 
-            DEFAULT_TTL_SECONDS
+            120,
+
+            1
 
         );
-
-
-    /*
-        Keep the cache bounded.
-
-        This prevents an unlimited
-        number of search queries from
-        consuming memory forever.
-    */
-
-    if (
-        cache.size >=
-        MAX_CACHE_ENTRIES &&
-
-        !cache.has(
-            key
-        )
-    ) {
-
-        const oldestKey =
-            cache.keys()
-                .next()
-                .value;
-
-
-        if (
-            oldestKey
-        ) {
-
-            cache.delete(
-                oldestKey
-            );
-
-        }
-
-    }
 
 
     cache.set(
@@ -137,13 +70,8 @@ function set(
 
             value,
 
-            createdAt:
-                Date.now(),
-
             expiresAt:
-
                 Date.now() +
-
                 (
                     ttl *
                     1000
@@ -152,9 +80,6 @@ function set(
         }
 
     );
-
-
-    return true;
 
 }
 
@@ -173,7 +98,18 @@ function size() {
 }
 
 
-function cleanup() {
+function deleteKey(
+    key
+) {
+
+    return cache.delete(
+        key
+    );
+
+}
+
+
+function cleanupExpired() {
 
     const now =
         Date.now();
@@ -184,13 +120,14 @@ function cleanup() {
             key,
             item
         ]
-
         of cache
     ) {
 
         if (
+
             now >=
             item.expiresAt
+
         ) {
 
             cache.delete(
@@ -204,10 +141,10 @@ function cleanup() {
 }
 
 
-const cleanupInterval =
+const cleanupTimer =
     setInterval(
 
-        cleanup,
+        cleanupExpired,
 
         60 *
         1000
@@ -216,12 +153,10 @@ const cleanupInterval =
 
 
 if (
-    cleanupInterval
-        .unref
+    cleanupTimer.unref
 ) {
 
-    cleanupInterval
-        .unref();
+    cleanupTimer.unref();
 
 }
 
@@ -236,6 +171,9 @@ module.exports = {
 
     size,
 
-    cleanup
+    delete:
+        deleteKey,
+
+    cleanupExpired
 
 };
