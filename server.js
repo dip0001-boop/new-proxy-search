@@ -7,9 +7,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
-// Serve index.html, style.css, and script.js
-// directly from the root folder
 app.use(express.static(__dirname));
 
 app.get("/api/search", async (req, res) => {
@@ -24,18 +21,24 @@ app.get("/api/search", async (req, res) => {
 
         const startTime = Date.now();
 
-        const response = await fetch(
-            `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-            {
-                headers: {
-                    "User-Agent":
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-                }
+        const searchURL =
+            "https://html.duckduckgo.com/html/?q=" +
+            encodeURIComponent(query);
+
+        const response = await fetch(searchURL, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Accept":
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9"
             }
-        );
+        });
 
         if (!response.ok) {
-            throw new Error(`Search request failed with status ${response.status}`);
+            throw new Error(
+                `DuckDuckGo returned status ${response.status}`
+            );
         }
 
         const html = await response.text();
@@ -44,23 +47,28 @@ app.get("/api/search", async (req, res) => {
         const results = [];
 
         $(".result").each((index, element) => {
-            if (results.length >= 20) {
-                return;
-            }
+            if (results.length >= 20) return;
 
-            const titleElement = $(element).find(".result__a");
-            const snippetElement = $(element).find(".result__snippet");
-            const urlElement = $(element).find(".result__url");
+            const titleElement = $(element).find(
+                ".result__title a, .result__a"
+            );
+
+            const snippetElement = $(element).find(
+                ".result__snippet"
+            );
+
+            const urlElement = $(element).find(
+                ".result__url"
+            );
 
             const title = titleElement.text().trim();
             const snippet = snippetElement.text().trim();
-            const url = urlElement.text().trim();
 
-            let link = titleElement.attr("href");
+            let link = titleElement.attr("href") || "";
 
-            if (!title || !link) {
-                return;
-            }
+            let url = urlElement.text().trim();
+
+            if (!title || !link) return;
 
             if (link.startsWith("//")) {
                 link = "https:" + link;
@@ -68,11 +76,15 @@ app.get("/api/search", async (req, res) => {
 
             results.push({
                 title,
-                url,
                 link,
+                url,
                 snippet
             });
         });
+
+        console.log(
+            `Search: "${query}" | Results found: ${results.length}`
+        );
 
         res.json({
             query,
@@ -91,7 +103,6 @@ app.get("/api/search", async (req, res) => {
     }
 });
 
-// Always serve index.html for normal page requests
 app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
