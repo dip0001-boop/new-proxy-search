@@ -1,5 +1,51 @@
-const database =
-    require("./database");
+const axios =
+    require("axios");
+
+const cheerio =
+    require("cheerio");
+
+const config =
+    require("./config");
+
+
+const USER_AGENT =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36";
+
+
+const searchClient =
+    axios.create({
+
+        timeout:
+            config.search.requestTimeout,
+
+        maxContentLength:
+            config.search.maxResponseSize,
+
+        maxBodyLength:
+            config.search.maxResponseSize,
+
+        headers: {
+
+            "User-Agent":
+                USER_AGENT,
+
+            "Accept":
+                "text/html,application/xhtml+xml",
+
+            "Accept-Language":
+                "en-US,en;q=0.9",
+
+            "Accept-Encoding":
+                "gzip, deflate, br"
+
+        },
+
+        validateStatus:
+            status =>
+                status >= 200 &&
+                status < 400
+
+    });
 
 
 function cleanText(
@@ -7,7 +53,8 @@ function cleanText(
 ) {
 
     return String(
-        value || ""
+        value ||
+        ""
     )
 
         .replace(
@@ -20,62 +67,133 @@ function cleanText(
 }
 
 
-function createSnippet(
-    result
+function decodeSearchURL(
+    rawURL
 ) {
 
-    const description =
-        cleanText(
-            result.description
-        );
+    try {
 
-
-    if (
-        description
-    ) {
-
-        return description
-            .slice(
-                0,
-                320
+        let url =
+            String(
+                rawURL ||
+                ""
             );
 
-    }
+
+        if (
+            url.startsWith(
+                "//"
+            )
+        ) {
+
+            url =
+                "https:" +
+                url;
+
+        }
 
 
-    const content =
-        cleanText(
-            result.content
-        );
-
-
-    if (
-        content
-    ) {
-
-        return content
-            .slice(
-                0,
-                320
+        const parsed =
+            new URL(
+                url,
+                "https://html.duckduckgo.com"
             );
 
+
+        const encoded =
+            parsed.searchParams.get(
+                "uddg"
+            );
+
+
+        if (
+            encoded
+        ) {
+
+            return decodeURIComponent(
+                encoded
+            );
+
+        }
+
+
+        return parsed.toString();
+
+    } catch {
+
+        return null;
+
     }
-
-
-    return (
-
-        "No description available."
-
-    );
 
 }
 
 
-function search(
+function getSearchOffset(
+    page
+) {
+
+    return (
+
+        Math.max(
+            Number(
+                page
+            ) ||
+            1,
+
+            1
+
+        ) -
+
+        1
+
+    ) *
+
+    30;
+
+}
+
+
+function validTargetURL(
+    value
+) {
+
+    try {
+
+        const parsed =
+            new URL(
+                value
+            );
+
+
+        if (
+
+            parsed.protocol !==
+                "http:" &&
+
+            parsed.protocol !==
+                "https:"
+
+        ) {
+
+            return null;
+
+        }
+
+
+        return parsed;
+
+    } catch {
+
+        return null;
+
+    }
+
+}
+
+
+async function search(
     query,
-
     options = {}
-
 ) {
 
     const limit =
@@ -85,13 +203,14 @@ function search(
 
                 Number(
                     options.limit
-                ) || 10,
+                ) ||
+                10,
 
                 1
 
             ),
 
-            50
+            config.search.maxResults
 
         );
 
@@ -101,104 +220,161 @@ function search(
 
             Number(
                 options.page
-            ) || 1,
+            ) ||
+            1,
 
             1
 
         );
 
 
-    const offset =
-        (
+    const searchURL =
+        "https://html.duckduckgo.com/html/?" +
 
-            page -
+        new URLSearchParams({
 
-            1
+            q:
+                query,
 
-        ) *
+            s:
+                String(
+                    getSearchOffset(
+                        page
+                    )
+                )
 
-        limit;
+        });
+
+
+    const response =
+        await searchClient.get(
+            searchURL
+        );
+
+
+    const $ =
+        cheerio.load(
+            response.data
+        );
 
 
     const results =
-        database.searchPages(
+        [];
 
-            query,
 
-            limit,
+    $(".result").each(
 
-            offset
+        (
+            _,
+            element
+        ) => {
 
-        );
+            if (
+
+                results.length >=
+                limit
+
+            ) {
+
+                return;
+
+            }
+
+
+            const titleElement =
+                $(element)
+                    .find(
+                        ".result__a"
+                    )
+                    .first();
+
+
+            const snippetElement =
+                $(element)
+                    .find(
+                        ".result__snippet"
+                    )
+                    .first();
+
+
+            const rawURL =
+                titleElement.attr(
+                    "href"
+                );
+
+
+            if (
+                !rawURL
+            ) {
+
+                return;
+
+            }
+
+
+            const link =
+                decodeSearchURL(
+                    rawURL
+                );
+
+
+            const target =
+                validTargetURL(
+                    link
+                );
+
+
+            if (
+                !target
+            ) {
+
+                return;
+
+            }
+
+
+            results.push({
+
+                title:
+                    cleanText(
+                        titleElement.text()
+                    ) ||
+
+                    "Untitled result",
+
+
+                link:
+                    target.toString(),
+
+
+                snippet:
+                    cleanText(
+                        snippetElement.text()
+                    ) ||
+
+                    "No description available.",
+
+
+                source:
+                    target.hostname
+
+            });
+
+        }
+
+    );
 
 
     return {
 
         provider:
-
-            "THE VAULT INDEX",
-
-
-        results:
-
-            results.map(
-
-                result => ({
-
-                    title:
-
-                        cleanText(
-
-                            result.title
-
-                        ) ||
-
-                        "Untitled page",
+            "LIVE WEB SEARCH",
 
 
-                    link:
-
-                        result.url,
-
-
-                    snippet:
-
-                        createSnippet(
-
-                            result
-
-                        ),
-
-
-                    source:
-
-                        cleanText(
-
-                            result.domain
-
-                        ),
-
-
-                    relevance:
-
-                        Number(
-
-                            result.relevance
-
-                        ) || 0,
-
-
-                    crawledAt:
-
-                        result.crawled_at
-
-                })
-
-            ),
+        results,
 
 
         total:
-
             results.length
 
     };
