@@ -1,78 +1,97 @@
-const axios =
-    require(
-        "axios"
-    );
-
-const cheerio =
-    require(
-        "cheerio"
-    );
-
+const axios = require("axios");
+const cheerio = require("cheerio");
 
 const USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 
-function cleanText(
-    value
-) {
-    return String(
-        value ||
-        ""
-    )
-        .replace(
-            /\s+/g,
-            " "
-        )
+function cleanText(value) {
+    return String(value || "")
+        .replace(/\s+/g, " ")
         .trim();
 }
 
 
-function decodeGoogleURL(
-    href
-) {
+function decodeGoogleURL(href) {
     try {
+        if (!href) {
+            return null;
+        }
+
+        const value =
+            String(href).trim();
+
+
+        /*
+         * Google redirect URLs:
+         *
+         * /url?q=https://example.com
+         * /url?url=https://example.com
+         * /url?sa=t&url=https://example.com
+         */
 
         if (
-            href.startsWith(
-                "/url?q="
+            value.startsWith(
+                "/url?"
             )
         ) {
-
-            href =
-                href.substring(
-                    7
+            const parsed =
+                new URL(
+                    "https://www.google.com" +
+                    value
                 );
 
-            href =
-                href.split(
-                    "&"
-                )[0];
 
-            return decodeURIComponent(
-                href
-            );
+            const possibleURLs = [
+                parsed.searchParams.get(
+                    "url"
+                ),
+
+                parsed.searchParams.get(
+                    "q"
+                ),
+
+                parsed.searchParams.get(
+                    "uddg"
+                )
+            ];
+
+
+            for (
+                const possibleURL
+                of possibleURLs
+            ) {
+                if (
+                    possibleURL &&
+                    /^https?:\/\//i.test(
+                        possibleURL
+                    )
+                ) {
+                    return decodeURIComponent(
+                        possibleURL
+                    );
+                }
+            }
         }
 
 
+        /*
+         * Direct external URL
+         */
+
         if (
-            href.startsWith(
-                "http://"
-            ) ||
-            href.startsWith(
-                "https://"
+            /^https?:\/\//i.test(
+                value
             )
         ) {
-            return href;
+            return value;
         }
 
 
         return null;
 
     } catch {
-
         return null;
-
     }
 }
 
@@ -84,7 +103,6 @@ function addResult(
     snippet,
     limit
 ) {
-
     if (
         results.length >=
         limit
@@ -101,10 +119,7 @@ function addResult(
 
     const cleanLink =
         decodeGoogleURL(
-            String(
-                link ||
-                ""
-            )
+            link
         );
 
 
@@ -122,10 +137,25 @@ function addResult(
     }
 
 
+    let parsedURL;
+
+
+    try {
+        parsedURL =
+            new URL(
+                cleanLink
+            );
+
+    } catch {
+        return;
+    }
+
+
     if (
-        cleanLink.includes(
+        parsedURL.hostname ===
+            "www.google.com" ||
+        parsedURL.hostname ===
             "google.com"
-        )
     ) {
         return;
     }
@@ -142,27 +172,7 @@ function addResult(
     }
 
 
-    let source =
-        "";
-
-
-    try {
-
-        source =
-            new URL(
-                cleanLink
-            ).hostname;
-
-    } catch {
-
-        source =
-            cleanLink;
-
-    }
-
-
     results.push({
-
         title:
             cleanTitle,
 
@@ -173,10 +183,46 @@ function addResult(
             cleanSnippet ||
             "No description available.",
 
-        source
-
+        source:
+            parsedURL.hostname
     });
+}
 
+
+function extractSnippet(
+    $,
+    element
+) {
+    const parent =
+        $(element)
+            .closest(
+                "div"
+            );
+
+
+    const text =
+        parent
+            .text();
+
+
+    const title =
+        cleanText(
+            $(element)
+                .find(
+                    "h3"
+                )
+                .first()
+                .text()
+        );
+
+
+    return cleanText(
+        text
+            .replace(
+                title,
+                ""
+            )
+    );
 }
 
 
@@ -184,14 +230,12 @@ async function searchGoogle(
     query,
     options = {}
 ) {
-
     const limit =
         Math.min(
             Math.max(
                 Number(
                     options.limit
-                ) ||
-                10,
+                ) || 10,
                 1
             ),
             50
@@ -202,8 +246,7 @@ async function searchGoogle(
         Math.max(
             Number(
                 options.page
-            ) ||
-            1,
+            ) || 1,
             1
         );
 
@@ -234,36 +277,53 @@ async function searchGoogle(
                 ),
 
             hl:
-                "en"
+                "en",
+
+            filter:
+                "0"
 
         }).toString();
 
 
     const response =
         await axios.get(
-
             searchURL,
-
             {
-
                 timeout:
                     20000,
 
-                headers: {
+                maxContentLength:
+                    20 *
+                    1024 *
+                    1024,
 
+                maxBodyLength:
+                    20 *
+                    1024 *
+                    1024,
+
+                headers: {
                     "User-Agent":
                         USER_AGENT,
 
                     "Accept":
-                        "text/html,application/xhtml+xml",
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 
                     "Accept-Language":
-                        "en-US,en;q=0.9"
+                        "en-US,en;q=0.9",
 
-                }
+                    "Cache-Control":
+                        "no-cache",
 
+                    "Pragma":
+                        "no-cache"
+                },
+
+                validateStatus:
+                    status =>
+                        status >= 200 &&
+                        status < 400
             }
-
         );
 
 
@@ -284,27 +344,21 @@ async function searchGoogle(
         [];
 
 
-    $("a").each(
+    /*
+     * Standard Google result layout
+     */
 
+    $("a").each(
         (
             _,
             element
         ) => {
-
-
             if (
                 results.length >=
                 limit
             ) {
                 return false;
             }
-
-
-            const href =
-                $(element)
-                    .attr(
-                        "href"
-                    );
 
 
             const title =
@@ -317,50 +371,34 @@ async function searchGoogle(
 
 
             if (
-                !href ||
                 !title
             ) {
                 return;
             }
 
 
-            const container =
+            const href =
                 $(element)
-                    .closest(
-                        "div"
+                    .attr(
+                        "href"
                     );
 
 
+            if (
+                !href
+            ) {
+                return;
+            }
+
+
             const snippet =
-                container
-                    .find(
-                        "div"
-                    )
-                    .filter(
-                        (
-                            _,
-                            node
-                        ) => {
-
-                            const text =
-                                $(node)
-                                    .text();
-
-                            return (
-                                text.length >
-                                40 &&
-                                text.length <
-                                500
-                            );
-
-                        }
-                    )
-                    .first()
-                    .text();
+                extractSnippet(
+                    $,
+                    element
+                );
 
 
             addResult(
-
                 results,
 
                 title,
@@ -370,16 +408,12 @@ async function searchGoogle(
                 snippet,
 
                 limit
-
             );
-
         }
-
     );
 
 
     return {
-
         provider:
             "google",
 
@@ -387,9 +421,7 @@ async function searchGoogle(
 
         total:
             results.length
-
     };
-
 }
 
 
@@ -397,7 +429,6 @@ async function search(
     query,
     options = {}
 ) {
-
     const cleanQuery =
         cleanText(
             query
@@ -407,9 +438,7 @@ async function search(
     if (
         !cleanQuery
     ) {
-
         return {
-
             provider:
                 "google",
 
@@ -418,27 +447,18 @@ async function search(
 
             total:
                 0
-
         };
-
     }
 
 
     return searchGoogle(
-
         cleanQuery,
-
         options
-
     );
-
 }
 
 
 module.exports = {
-
     search,
-
     searchGoogle
-
 };
