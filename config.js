@@ -1,41 +1,13 @@
-const path = require("path");
+const PORT =
+    Number(
+        process.env.PORT
+    ) || 3000;
 
 
-const config = {
+module.exports = {
 
     port:
-        process.env.PORT ||
-        10000,
-
-
-    databasePath:
-        process.env.DATABASE_PATH ||
-        path.join(
-            __dirname,
-            "vault-search.db"
-        ),
-
-
-    search: {
-
-        cacheTime:
-            120,
-
-        resultsPerPage:
-            10,
-
-        maxResults:
-            50,
-
-        requestTimeout:
-            15000,
-
-        maxResponseSize:
-            5 *
-            1024 *
-            1024
-
-    },
+        PORT,
 
 
     proxy: {
@@ -43,13 +15,40 @@ const config = {
         requestTimeout:
             30000,
 
+        maxRedirects:
+            10,
+
         maxResponseSize:
+            100 *
+            1024 *
+            1024,
+
+        maxRequestSize:
             50 *
             1024 *
             1024,
 
-        maxRedirects:
-            10
+        maxSessions:
+            5000,
+
+        sessionTTL:
+            1000 *
+            60 *
+            60 *
+            24
+
+    },
+
+
+    search: {
+
+        resultsPerPage:
+            10,
+
+        cacheTime:
+            1000 *
+            60 *
+            5
 
     },
 
@@ -57,7 +56,10 @@ const config = {
     security: {
 
         maxQueryLength:
-            300
+            300,
+
+        maxURLLength:
+            8192
 
     },
 
@@ -65,8 +67,8 @@ const config = {
     rateLimit: {
 
         windowMs:
-            60 *
-            1000,
+            1000 *
+            60,
 
         maxRequests:
             120
@@ -74,7 +76,3 @@ const config = {
     }
 
 };
-
-
-module.exports =
-    config;
