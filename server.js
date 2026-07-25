@@ -1,7 +1,6 @@
 const express = require("express");
 const path = require("path");
 const http = require("http");
-const crypto = require("crypto");
 const cheerio = require("cheerio");
 const compression = require("compression");
 const cors = require("cors");
@@ -16,147 +15,91 @@ const crawlerState = require("./crawlerState");
 const searchEngine = require("./searchProviders");
 const scheduler = require("./scheduler");
 
-const sessionManager =
-    require("./sessionManager");
+const sessionManager = require("./sessionManager");
+const proxyRequest = require("./proxyRequest");
+const websocketProxy = require("./websocketProxy");
 
-const proxyRequest =
-    require("./proxyRequest");
+const app = express();
+const server = http.createServer(app);
 
-const proxySession =
-    require("./proxySession");
-
-const websocketProxy =
-    require("./websocketProxy");
-
-
-const app =
-    express();
-
-
-const server =
-    http.createServer(
-        app
-    );
-
-
-const USER_AGENT =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 THE-VAULT";
-
-
-app.set(
-    "trust proxy",
-    1
-);
-
-app.disable(
-    "x-powered-by"
-);
-
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
 
 app.use(
     helmet({
-        contentSecurityPolicy:
-            false
+        contentSecurityPolicy: false
     })
 );
 
-
-app.use(
-    cors()
-);
-
-
-app.use(
-    compression()
-);
-
+app.use(cors());
+app.use(compression());
 
 app.use(
     express.json({
-        limit:
-            "10mb"
+        limit: "10mb"
     })
 );
-
 
 app.use(
     express.urlencoded({
-        extended:
-            true,
-
-        limit:
-            "10mb"
+        extended: true,
+        limit: "10mb"
     })
 );
 
+const apiLimiter = rateLimit({
+    windowMs: config.rateLimit.windowMs,
+    max: config.rateLimit.maxRequests,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        error: "Too many requests. Please try again later."
+    }
+});
 
-const apiLimiter =
-    rateLimit({
-
-        windowMs:
-            config.rateLimit.windowMs,
-
-        max:
-            config.rateLimit.maxRequests,
-
-        standardHeaders:
-            true,
-
-        legacyHeaders:
-            false,
-
-        message: {
-            error:
-                "Too many requests. Please try again later."
-        }
-
-    });
-
-
-app.use(
-    "/api/",
-    apiLimiter
-);
+app.use("/api/", apiLimiter);
 
 
 /* =================================
    URL HELPERS
 ================================= */
 
-function getTargetURL(
-    rawURL
-) {
+function getTargetURL(rawURL) {
     try {
-
-        const target =
-            new URL(
-                String(
-                    rawURL ||
-                    ""
-                )
-            );
-
+        const target = new URL(
+            String(rawURL || "")
+        );
 
         if (
-
-            target.protocol !==
-                "http:" &&
-
-            target.protocol !==
-                "https:"
-
+            target.protocol !== "http:" &&
+            target.protocol !== "https:"
         ) {
             return null;
         }
 
-
         return target;
-
     } catch {
-
         return null;
-
     }
+}
+
+
+function shouldSkipURL(value) {
+    const url = String(
+        value || ""
+    )
+        .trim()
+        .toLowerCase();
+
+    return (
+        !url ||
+        url.startsWith("data:") ||
+        url.startsWith("blob:") ||
+        url.startsWith("javascript:") ||
+        url.startsWith("mailto:") ||
+        url.startsWith("tel:") ||
+        url.startsWith("#")
+    );
 }
 
 
@@ -166,95 +109,37 @@ function makeProxyURL(
     sessionID
 ) {
     try {
-
-        const absolute =
-            new URL(
-                rawURL,
-                baseURL
-            );
-
+        const absolute = new URL(
+            rawURL,
+            baseURL
+        );
 
         if (
-
-            absolute.protocol !==
-                "http:" &&
-
-            absolute.protocol !==
-                "https:"
-
+            absolute.protocol !== "http:" &&
+            absolute.protocol !== "https:"
         ) {
             return rawURL;
         }
 
-
         return (
-
             "/proxy?url=" +
-
             encodeURIComponent(
                 absolute.toString()
             ) +
-
             "&session=" +
-
             encodeURIComponent(
                 sessionID
             )
-
         );
-
     } catch {
-
         return rawURL;
-
     }
 }
 
 
-function shouldSkipURL(
-    value
-) {
-    const url =
-        String(
-            value ||
-            ""
-        )
-            .trim()
-            .toLowerCase();
-
-
-    return (
-
-        !url ||
-
-        url.startsWith(
-            "data:"
-        ) ||
-
-        url.startsWith(
-            "blob:"
-        ) ||
-
-        url.startsWith(
-            "javascript:"
-        ) ||
-
-        url.startsWith(
-            "mailto:"
-        ) ||
-
-        url.startsWith(
-            "tel:"
-        ) ||
-
-        url.startsWith(
-            "#"
-        )
-
-    );
-
-}
-
+/* =================================
+   CSS REWRITING
+================================= */
 
 function rewriteCSSURLs(
     css,
@@ -262,47 +147,36 @@ function rewriteCSSURLs(
     sessionID
 ) {
     return String(
-        css ||
-        ""
+        css || ""
     ).replace(
-
         /url\(\s*(['"]?)(.*?)\1\s*\)/gi,
-
         (
             match,
             quote,
             value
         ) => {
-
             const clean =
-                value.trim();
-
+                String(value || "").trim();
 
             if (
-                shouldSkipURL(
-                    clean
-                )
+                shouldSkipURL(clean)
             ) {
                 return match;
             }
 
-
-            return (
-
-                `url("${makeProxyURL(
-                    clean,
-                    baseURL,
-                    sessionID
-                )}")`
-
-            );
-
+            return `url("${makeProxyURL(
+                clean,
+                baseURL,
+                sessionID
+            )}")`;
         }
-
     );
-
 }
 
+
+/* =================================
+   SRCSET REWRITING
+================================= */
 
 function rewriteSrcset(
     value,
@@ -310,20 +184,15 @@ function rewriteSrcset(
     sessionID
 ) {
     return String(
-        value ||
-        ""
+        value || ""
     )
         .split(",")
         .map(
             item => {
-
                 const parts =
                     item
                         .trim()
-                        .split(
-                            /\s+/
-                        );
-
+                        .split(/\s+/);
 
                 if (
                     !parts.length ||
@@ -334,7 +203,6 @@ function rewriteSrcset(
                     return item;
                 }
 
-
                 parts[0] =
                     makeProxyURL(
                         parts[0],
@@ -342,19 +210,18 @@ function rewriteSrcset(
                         sessionID
                     );
 
-
                 return parts.join(
                     " "
                 );
-
             }
         )
-        .join(
-            ", "
-        );
-
+        .join(", ");
 }
 
+
+/* =================================
+   HTML REWRITING
+================================= */
 
 function rewriteHTML(
     html,
@@ -370,21 +237,17 @@ function rewriteHTML(
             }
         );
 
-
     $("base").remove();
-
 
     $("[href]").each(
         (
             _,
             element
         ) => {
-
             const href =
                 $(element).attr(
                     "href"
                 );
-
 
             if (
                 href &&
@@ -392,35 +255,27 @@ function rewriteHTML(
                     href
                 )
             ) {
-
                 $(element).attr(
                     "href",
-
                     makeProxyURL(
                         href,
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     $("[src]").each(
         (
             _,
             element
         ) => {
-
             const src =
                 $(element).attr(
                     "src"
                 );
-
 
             if (
                 src &&
@@ -428,68 +283,52 @@ function rewriteHTML(
                     src
                 )
             ) {
-
                 $(element).attr(
                     "src",
-
                     makeProxyURL(
                         src,
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     $("[srcset]").each(
         (
             _,
             element
         ) => {
-
             const srcset =
                 $(element).attr(
                     "srcset"
                 );
 
-
             if (
                 srcset
             ) {
-
                 $(element).attr(
                     "srcset",
-
                     rewriteSrcset(
                         srcset,
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     $("[action]").each(
         (
             _,
             element
         ) => {
-
             const action =
                 $(element).attr(
                     "action"
                 );
-
 
             if (
                 action &&
@@ -497,98 +336,74 @@ function rewriteHTML(
                     action
                 )
             ) {
-
                 $(element).attr(
                     "action",
-
                     makeProxyURL(
                         action,
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     $("[style]").each(
         (
             _,
             element
         ) => {
-
             const style =
                 $(element).attr(
                     "style"
                 );
 
-
             if (
                 style
             ) {
-
                 $(element).attr(
                     "style",
-
                     rewriteCSSURLs(
                         style,
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     $("style").each(
         (
             _,
             element
         ) => {
-
             const css =
                 $(element).html();
-
 
             if (
                 css
             ) {
-
                 $(element).html(
-
                     rewriteCSSURLs(
                         css,
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     $("meta[http-equiv='refresh']").each(
         (
             _,
             element
         ) => {
-
             const content =
                 $(element).attr(
                     "content"
                 );
-
 
             if (
                 !content
@@ -596,95 +411,72 @@ function rewriteHTML(
                 return;
             }
 
-
             const match =
                 content.match(
                     /^(\s*\d+\s*;\s*url=)(.*)$/i
                 );
 
-
             if (
                 match
             ) {
-
                 $(element).attr(
                     "content",
-
                     match[1] +
-
                     makeProxyURL(
                         match[2],
                         pageURL,
                         sessionID
                     )
-
                 );
-
             }
-
         }
     );
-
 
     return (
         "<!DOCTYPE html>" +
         $.html()
     );
-
 }
 
 
 /* =================================
-   PROXY ROUTE
+   PROXY
 ================================= */
 
 app.all(
-
     "/proxy",
-
     async (
         req,
         res
     ) => {
-
         const target =
             getTargetURL(
                 req.query.url
             );
 
-
         if (
             !target
         ) {
-
             return res
-                .status(
-                    400
-                )
+                .status(400)
                 .send(
                     "Invalid proxy URL."
                 );
-
         }
-
 
         const session =
             sessionManager.getOrCreate(
                 req.query.session
             );
 
-
         const sessionID =
             session.id;
-
 
         session.currentURL =
             target.toString();
 
-
         session.currentOrigin =
             target.origin;
-
 
         res.cookie(
             "vault_session",
@@ -707,112 +499,75 @@ app.all(
             }
         );
 
-
         try {
-
             const response =
                 await proxyRequest.request(
-
                     req,
-
                     session,
-
                     target
-
                 );
-
 
             proxyRequest.copyHeaders(
                 response,
                 res
             );
 
-
             res.status(
                 response.status
             );
-
 
             res.setHeader(
                 "X-Vault-Proxy",
                 "THE VAULT"
             );
 
-
             const contentType =
                 String(
-
                     response.headers[
                         "content-type"
-                    ] ||
-                    ""
-
+                    ] || ""
                 );
-
 
             const data =
                 Buffer.from(
                     response.data
                 );
 
-
             if (
                 contentType.includes(
                     "text/html"
                 )
             ) {
-
                 return res
-                    .type(
-                        "html"
-                    )
+                    .type("html")
                     .send(
-
                         rewriteHTML(
-
                             data.toString(
                                 "utf8"
                             ),
-
                             target.toString(),
-
                             sessionID
-
                         )
-
                     );
-
             }
-
 
             if (
                 contentType.includes(
                     "text/css"
                 )
             ) {
-
                 return res
-                    .type(
-                        "css"
-                    )
+                    .type("css")
                     .send(
-
                         rewriteCSSURLs(
-
                             data.toString(
                                 "utf8"
                             ),
-
                             target.toString(),
-
                             sessionID
-
                         )
-
                     );
-
             }
-
 
             return res.send(
                 data
@@ -821,35 +576,32 @@ app.all(
         } catch (
             error
         ) {
-
             console.error(
                 "PROXY ERROR:",
-                error.message
+                error
             );
 
-
             return res
-                .status(
-                    502
-                )
+                .status(502)
                 .send(
                     `
-                    <h1>
-                        THE VAULT PROXY ERROR
-                    </h1>
-
-                    <p>
-                        ${String(
-                            error.message
-                        )}
-                    </p>
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>THE VAULT Proxy Error</title>
+                    </head>
+                    <body>
+                        <h1>THE VAULT PROXY ERROR</h1>
+                        <p>${String(
+                            error.message ||
+                            "Proxy request failed."
+                        )}</p>
+                    </body>
+                    </html>
                     `
                 );
-
         }
-
     }
-
 );
 
 
@@ -863,9 +615,7 @@ app.get(
         req,
         res
     ) => {
-
         res.json({
-
             status:
                 "online",
 
@@ -887,9 +637,7 @@ app.get(
             timestamp:
                 new Date()
                     .toISOString()
-
         });
-
     }
 );
 
@@ -904,116 +652,93 @@ app.get(
         req,
         res
     ) => {
-
         const startTime =
             Date.now();
 
-
         try {
-
             const query =
                 typeof req.query.q ===
                 "string"
-
                     ? req.query.q.trim()
-
                     : "";
-
 
             if (
                 !query
             ) {
-
                 return res
-                    .status(
-                        400
-                    )
+                    .status(400)
                     .json({
                         error:
                             "Please enter a search query."
                     });
-
             }
 
-
             if (
-
                 query.length >
                 config.security.maxQueryLength
-
             ) {
-
                 return res
-                    .status(
-                        400
-                    )
+                    .status(400)
                     .json({
                         error:
                             "Search query is too long."
                     });
-
             }
-
 
             const page =
                 Math.max(
-
                     Number.parseInt(
                         req.query.page,
                         10
                     ) || 1,
-
                     1
-
                 );
-
 
             const limit =
                 config.search.resultsPerPage;
 
-
             const cacheKey =
                 `live:${query.toLowerCase()}` +
                 `:page:${page}`;
-
 
             const cached =
                 cache.get(
                     cacheKey
                 );
 
-
             if (
                 cached
             ) {
-
                 return res.json({
-
                     ...cached,
-
                     cached:
-                        true
+                        true,
 
+                    time:
+                        Date.now() -
+                        startTime
                 });
-
             }
 
-
+            // IMPORTANT:
+            // search() is asynchronous.
             const search =
                 await searchEngine.search(
-
                     query,
-
                     {
                         limit,
                         page
                     }
-
                 );
 
+            const results =
+                Array.isArray(
+                    search.results
+                )
+                    ? search.results
+                    : [];
 
             const response = {
-
                 query,
 
                 page,
@@ -1021,11 +746,10 @@ app.get(
                 provider:
                     search.provider,
 
-                results:
-                    search.results,
+                results,
 
                 count:
-                    search.results.length,
+                    results.length,
 
                 cached:
                     false,
@@ -1033,20 +757,13 @@ app.get(
                 time:
                     Date.now() -
                     startTime
-
             };
 
-
             cache.set(
-
                 cacheKey,
-
                 response,
-
                 config.search.cacheTime
-
             );
-
 
             return res.json(
                 response
@@ -1055,25 +772,19 @@ app.get(
         } catch (
             error
         ) {
-
             console.error(
                 "SEARCH ERROR:",
                 error
             );
 
-
             return res
-                .status(
-                    500
-                )
+                .status(500)
                 .json({
                     error:
                         error.message ||
                         "Search failed."
                 });
-
         }
-
     }
 );
 
@@ -1088,9 +799,7 @@ app.get(
         req,
         res
     ) => {
-
         res.json({
-
             service:
                 "THE VAULT PROXY",
 
@@ -1105,9 +814,7 @@ app.get(
 
             queue:
                 crawlQueue.getStats()
-
         });
-
     }
 );
 
@@ -1122,31 +829,33 @@ app.post(
         req,
         res
     ) => {
-
         if (
-            crawlerState.get().running
+            crawlerState.get()
+                .running
         ) {
-
             return res.json({
-
                 status:
                     "already_running"
-
             });
-
         }
 
-
         res.json({
-
             status:
                 "started"
-
         });
 
-
-        scheduler.runCrawler();
-
+        Promise
+            .resolve(
+                scheduler.runCrawler()
+            )
+            .catch(
+                error => {
+                    console.error(
+                        "CRAWLER ERROR:",
+                        error
+                    );
+                }
+            );
     }
 );
 
@@ -1172,14 +881,12 @@ app.get(
         req,
         res
     ) => {
-
         res.sendFile(
             path.join(
                 __dirname,
                 "index.html"
             )
         );
-
     }
 );
 
@@ -1191,16 +898,11 @@ app.get(
 server.listen(
     config.port,
     () => {
-
         console.log(
-
             `THE VAULT PROXY running on port ${config.port}`
-
         );
 
-
         scheduler.startScheduler();
-
     }
 );
 
@@ -1210,11 +912,7 @@ server.listen(
 ================================= */
 
 websocketProxy.attachWebSocketProxy(
-
     server,
-
     getTargetURL,
-
     sessionManager.getSession
-
 );
