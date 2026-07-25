@@ -3,10 +3,15 @@ const WebSocket =
 
 
 function attachWebSocketProxy(
+
     server,
+
     getTargetURL,
+
     getSession
+
 ) {
+
     const wss =
         new WebSocket.Server({
 
@@ -17,49 +22,73 @@ function attachWebSocketProxy(
 
 
     server.on(
+
         "upgrade",
+
         (
+
             req,
+
             socket,
+
             head
+
         ) => {
+
+            let parsed;
 
             let target;
 
 
             try {
-                const parsed =
+
+                parsed =
                     new URL(
+
                         req.url,
+
                         "http://localhost"
-                    );
 
-
-                const rawURL =
-                    parsed.searchParams.get(
-                        "url"
                     );
 
 
                 target =
                     getTargetURL(
-                        rawURL
+
+                        parsed.searchParams.get(
+                            "url"
+                        )
+
                     );
 
             } catch {
+
                 socket.destroy();
 
                 return;
+
             }
 
 
             if (
                 !target
             ) {
+
                 socket.destroy();
 
                 return;
+
             }
+
+
+            const session =
+                getSession(
+
+                    parsed.searchParams.get(
+                        "session"
+                    )
+
+                );
 
 
             wss.handleUpgrade(
@@ -70,102 +99,175 @@ function attachWebSocketProxy(
 
                 head,
 
-                clientSocket => {
+                client => {
+
+                    const headers = {
+
+                        "User-Agent":
+
+                            req.headers[
+                                "user-agent"
+                            ] ||
+
+                            "Mozilla/5.0",
+
+                        "Origin":
+
+                            target.origin
+
+                    };
+
 
                     const upstream =
                         new WebSocket(
-                            target.toString()
+
+                            target.toString(),
+
+                            {
+
+                                headers
+
+                            }
+
                         );
 
 
-                    upstream.on(
-                        "open",
-                        () => {
-
-                            clientSocket.on(
-                                "message",
-                                data => {
-
-                                    if (
-                                        upstream.readyState ===
-                                        WebSocket.OPEN
-                                    ) {
-                                        upstream.send(
-                                            data
-                                        );
-                                    }
-
-                                }
-                            );
+                    let closed =
+                        false;
 
 
-                            upstream.on(
-                                "message",
-                                data => {
+                    function closeBoth() {
 
-                                    if (
-                                        clientSocket.readyState ===
-                                        WebSocket.OPEN
-                                    ) {
-                                        clientSocket.send(
-                                            data
-                                        );
-                                    }
+                        if (
+                            closed
+                        ) {
 
-                                }
-                            );
+                            return;
 
                         }
-                    );
 
 
-                    upstream.on(
-                        "close",
-                        () => {
-
-                            if (
-                                clientSocket.readyState !==
-                                WebSocket.CLOSED
-                            ) {
-                                clientSocket.close();
-                            }
-
-                        }
-                    );
+                        closed =
+                            true;
 
 
-                    clientSocket.on(
-                        "close",
-                        () => {
+                        if (
 
-                            if (
-                                upstream.readyState !==
-                                WebSocket.CLOSED
-                            ) {
-                                upstream.close();
-                            }
+                            client.readyState ===
+                            WebSocket.OPEN
+
+                        ) {
+
+                            client.close();
 
                         }
-                    );
 
 
-                    upstream.on(
-                        "error",
-                        () => {
+                        if (
 
-                            clientSocket.close();
+                            upstream.readyState ===
+                            WebSocket.OPEN
 
-                        }
-                    );
-
-
-                    clientSocket.on(
-                        "error",
-                        () => {
+                        ) {
 
                             upstream.close();
 
                         }
+
+                    }
+
+
+                    upstream.on(
+
+                        "open",
+
+                        () => {
+
+                            client.on(
+
+                                "message",
+
+                                data => {
+
+                                    if (
+
+                                        upstream.readyState ===
+                                        WebSocket.OPEN
+
+                                    ) {
+
+                                        upstream.send(
+                                            data
+                                        );
+
+                                    }
+
+                                }
+
+                            );
+
+
+                            upstream.on(
+
+                                "message",
+
+                                data => {
+
+                                    if (
+
+                                        client.readyState ===
+                                        WebSocket.OPEN
+
+                                    ) {
+
+                                        client.send(
+                                            data
+                                        );
+
+                                    }
+
+                                }
+
+                            );
+
+                        }
+
+                    );
+
+
+                    upstream.on(
+
+                        "close",
+
+                        closeBoth
+
+                    );
+
+
+                    client.on(
+
+                        "close",
+
+                        closeBoth
+
+                    );
+
+
+                    upstream.on(
+
+                        "error",
+
+                        closeBoth
+
+                    );
+
+
+                    client.on(
+
+                        "error",
+
+                        closeBoth
+
                     );
 
                 }
@@ -173,13 +275,17 @@ function attachWebSocketProxy(
             );
 
         }
+
     );
 
 
     return wss;
+
 }
 
 
 module.exports = {
+
     attachWebSocketProxy
+
 };
