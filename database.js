@@ -1,7 +1,6 @@
 const Database =
     require("better-sqlite3");
 
-
 const config =
     require("./config");
 
@@ -16,9 +15,20 @@ db.pragma(
     "journal_mode = WAL"
 );
 
+db.pragma(
+    "synchronous = NORMAL"
+);
 
 db.pragma(
     "busy_timeout = 10000"
+);
+
+db.pragma(
+    "cache_size = -64000"
+);
+
+db.pragma(
+    "temp_store = MEMORY"
 );
 
 
@@ -26,53 +36,337 @@ db.exec(`
 
     CREATE TABLE IF NOT EXISTS pages (
 
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id
+            INTEGER PRIMARY KEY AUTOINCREMENT,
 
-        url TEXT UNIQUE NOT NULL,
+        url
+            TEXT UNIQUE NOT NULL,
 
-        title TEXT NOT NULL,
+        title
+            TEXT NOT NULL,
 
-        description TEXT DEFAULT '',
+        description
+            TEXT DEFAULT '',
 
-        content TEXT DEFAULT '',
+        content
+            TEXT DEFAULT '',
 
-        domain TEXT NOT NULL,
+        domain
+            TEXT NOT NULL,
 
-        crawled_at INTEGER NOT NULL
+        crawled_at
+            INTEGER NOT NULL
 
     );
 
-
     CREATE INDEX IF NOT EXISTS
-    idx_pages_domain
-
+        idx_pages_domain
     ON pages(domain);
 
-
     CREATE INDEX IF NOT EXISTS
-    idx_pages_crawled_at
-
+        idx_pages_crawled_at
     ON pages(crawled_at);
 
-
     CREATE INDEX IF NOT EXISTS
-    idx_pages_title
-
-    ON pages(title);
-
-
-    CREATE INDEX IF NOT EXISTS
-    idx_pages_url
-
+        idx_pages_url
     ON pages(url);
 
 `);
 
 
+let ftsAvailable =
+    false;
+
+
+try {
+
+    db.exec(`
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts
+        USING fts5(
+
+            title,
+
+            description,
+
+            content,
+
+            url UNINDEXED,
+
+            domain UNINDEXED,
+
+            crawled_at UNINDEXED,
+
+            content='pages',
+
+            content_rowid='id'
+
+        );
+
+    `);
+
+
+    db.exec(`
+
+        CREATE TRIGGER IF NOT EXISTS
+            pages_ai
+
+        AFTER INSERT ON pages
+
+        BEGIN
+
+            INSERT INTO pages_fts(
+
+                rowid,
+
+                title,
+
+                description,
+
+                content,
+
+                url,
+
+                domain,
+
+                crawled_at
+
+            )
+
+            VALUES(
+
+                new.id,
+
+                new.title,
+
+                new.description,
+
+                new.content,
+
+                new.url,
+
+                new.domain,
+
+                new.crawled_at
+
+            );
+
+        END;
+
+    `);
+
+
+    db.exec(`
+
+        CREATE TRIGGER IF NOT EXISTS
+            pages_ad
+
+        AFTER DELETE ON pages
+
+        BEGIN
+
+            INSERT INTO pages_fts(
+
+                pages_fts,
+
+                rowid,
+
+                title,
+
+                description,
+
+                content,
+
+                url,
+
+                domain,
+
+                crawled_at
+
+            )
+
+            VALUES(
+
+                'delete',
+
+                old.id,
+
+                old.title,
+
+                old.description,
+
+                old.content,
+
+                old.url,
+
+                old.domain,
+
+                old.crawled_at
+
+            );
+
+        END;
+
+    `);
+
+
+    db.exec(`
+
+        CREATE TRIGGER IF NOT EXISTS
+            pages_au
+
+        AFTER UPDATE ON pages
+
+        BEGIN
+
+            INSERT INTO pages_fts(
+
+                pages_fts,
+
+                rowid,
+
+                title,
+
+                description,
+
+                content,
+
+                url,
+
+                domain,
+
+                crawled_at
+
+            )
+
+            VALUES(
+
+                'delete',
+
+                old.id,
+
+                old.title,
+
+                old.description,
+
+                old.content,
+
+                old.url,
+
+                old.domain,
+
+                old.crawled_at
+
+            );
+
+            INSERT INTO pages_fts(
+
+                rowid,
+
+                title,
+
+                description,
+
+                content,
+
+                url,
+
+                domain,
+
+                crawled_at
+
+            )
+
+            VALUES(
+
+                new.id,
+
+                new.title,
+
+                new.description,
+
+                new.content,
+
+                new.url,
+
+                new.domain,
+
+                new.crawled_at
+
+            );
+
+        END;
+
+    `);
+
+
+    const count =
+        db.prepare(`
+
+            SELECT COUNT(*) AS count
+
+            FROM pages_fts
+
+        `).get().count;
+
+
+    const pageCount =
+        db.prepare(`
+
+            SELECT COUNT(*) AS count
+
+            FROM pages
+
+        `).get().count;
+
+
+    if (
+        count !==
+        pageCount
+    ) {
+
+        db.exec(`
+
+            INSERT INTO pages_fts(
+
+                pages_fts
+
+            )
+
+            VALUES(
+
+                'rebuild'
+
+            );
+
+        `);
+
+    }
+
+
+    ftsAvailable =
+        true;
+
+
+} catch (
+    error
+) {
+
+    console.warn(
+
+        "FTS5 unavailable. Using fallback search:",
+
+        error.message
+
+    );
+
+}
+
+
 const savePageStatement =
     db.prepare(`
 
-        INSERT INTO pages (
+        INSERT INTO pages(
 
             url,
 
@@ -88,7 +382,7 @@ const savePageStatement =
 
         )
 
-        VALUES (
+        VALUES(
 
             @url,
 
@@ -131,8 +425,14 @@ function savePage(
 ) {
 
     if (
+
         !page ||
-        !page.url
+
+        typeof page.url !==
+        "string" ||
+
+        !page.url.trim()
+
     ) {
 
         return false;
@@ -140,31 +440,65 @@ function savePage(
     }
 
 
+    let domain =
+        page.domain ||
+        "";
+
+
+    if (
+        !domain
+    ) {
+
+        try {
+
+            domain =
+                new URL(
+                    page.url
+                ).hostname;
+
+        } catch {
+
+            domain =
+                "";
+
+        }
+
+    }
+
+
     savePageStatement.run({
 
         url:
-            page.url,
-
+            page.url.trim(),
 
         title:
-            page.title ||
-            "Untitled page",
-
+            String(
+                page.title ||
+                "Untitled page"
+            ).slice(
+                0,
+                1000
+            ),
 
         description:
-            page.description ||
-            "",
-
+            String(
+                page.description ||
+                ""
+            ).slice(
+                0,
+                10000
+            ),
 
         content:
-            page.content ||
-            "",
+            String(
+                page.content ||
+                ""
+            ).slice(
+                0,
+                1000000
+            ),
 
-
-        domain:
-            page.domain ||
-            "",
-
+        domain,
 
         crawled_at:
             Date.now()
@@ -177,51 +511,82 @@ function savePage(
 }
 
 
+function tokenize(
+    query
+) {
+
+    return String(
+        query ||
+        ""
+    )
+
+        .toLowerCase()
+
+        .replace(
+            /[^\p{L}\p{N}\s]/gu,
+            " "
+        )
+
+        .split(
+            /\s+/
+        )
+
+        .filter(
+            Boolean
+        )
+
+        .slice(
+            0,
+            30
+        );
+
+}
+
+
+function makeFTSQuery(
+    words
+) {
+
+    return words
+
+        .map(
+            word => {
+
+                const safe =
+                    word.replace(
+                        /["*:^()-]/g,
+                        " "
+                    );
+
+
+                return `"${safe}"*`;
+
+            }
+
+        )
+
+        .join(
+            " AND "
+        );
+
+}
+
+
 function searchPages(
     query,
 
     limit =
-        config.search
-            .resultsPerPage,
+        config.search.resultsPerPage,
 
     offset =
         0
 
 ) {
 
-
-    if (
-        typeof query !==
-        "string"
-    ) {
-
-        return [];
-
-    }
-
-
     const words =
-        query
-
-            .toLowerCase()
-
-            .replace(
-                /[^\p{L}\p{N}\s]/gu,
-                " "
-            )
-
-            .split(
-                /\s+/
-            )
-
-            .filter(
-                Boolean
-            )
-
-            .slice(
-                0,
-                20
-            );
+        tokenize(
+            query
+        );
 
 
     if (
@@ -234,95 +599,162 @@ function searchPages(
     }
 
 
-    const phrase =
-        words.join(
-            " "
+    const safeLimit =
+        Math.min(
+
+            Math.max(
+
+                Number(
+                    limit
+                ) || 10,
+
+                1
+
+            ),
+
+            100
+
         );
 
 
-    const phrasePattern =
-        `%${phrase}%`;
+    const safeOffset =
+        Math.max(
+
+            Number(
+                offset
+            ) || 0,
+
+            0
+
+        );
+
+
+    if (
+        ftsAvailable
+    ) {
+
+        const match =
+            makeFTSQuery(
+                words
+            );
+
+
+        try {
+
+            return db.prepare(`
+
+                SELECT
+
+                    p.url,
+
+                    p.title,
+
+                    p.description,
+
+                    p.content,
+
+                    p.domain,
+
+                    p.crawled_at,
+
+                    bm25(
+
+                        pages_fts,
+
+                        10.0,
+
+                        4.0,
+
+                        1.0
+
+                    ) AS rank
+
+                FROM pages_fts
+
+                JOIN pages p
+
+                    ON p.id =
+                    pages_fts.rowid
+
+                WHERE pages_fts MATCH ?
+
+                ORDER BY
+
+                    rank ASC,
+
+                    p.crawled_at DESC
+
+                LIMIT ?
+
+                OFFSET ?
+
+            `).all(
+
+                match,
+
+                safeLimit,
+
+                safeOffset
+
+            );
+
+        } catch {
+
+            // Fall through to LIKE search.
+
+        }
+
+    }
+
+
+    const patterns =
+        words.map(
+            word =>
+                `%${word}%`
+        );
 
 
     const conditions =
         words.map(
             () => `
 
-                (
+                LOWER(title)
+                LIKE ?
 
-                    LOWER(title)
-                    LIKE ?
+                OR
 
-                    OR
+                LOWER(description)
+                LIKE ?
 
-                    LOWER(description)
-                    LIKE ?
+                OR
 
-                    OR
-
-                    LOWER(content)
-                    LIKE ?
-
-                )
+                LOWER(content)
+                LIKE ?
 
             `
         );
 
 
-    const scoreParts =
-        words.map(
-            () => `
-
-                (
-
-                    CASE
-
-                        WHEN
-                        LOWER(title)
-                        LIKE ?
-
-                        THEN 100
-
-                        ELSE 0
-
-                    END
+    const params =
+        [];
 
 
-                    +
+    for (
+        const pattern
+        of patterns
+    ) {
 
+        params.push(
 
-                    CASE
+            pattern,
 
-                        WHEN
-                        LOWER(description)
-                        LIKE ?
+            pattern,
 
-                        THEN 35
+            pattern
 
-                        ELSE 0
-
-                    END
-
-
-                    +
-
-
-                    CASE
-
-                        WHEN
-                        LOWER(content)
-                        LIKE ?
-
-                        THEN 10
-
-                        ELSE 0
-
-                    END
-
-                )
-
-            `
         );
+
+    }
 
 
     const sql = `
@@ -339,91 +771,19 @@ function searchPages(
 
             domain,
 
-            crawled_at,
-
-
-            (
-
-                CASE
-
-                    WHEN
-                    LOWER(title)
-                    LIKE ?
-
-                    THEN 300
-
-                    ELSE 0
-
-                END
-
-
-                +
-
-
-                CASE
-
-                    WHEN
-                    LOWER(description)
-                    LIKE ?
-
-                    THEN 100
-
-                    ELSE 0
-
-                END
-
-
-                +
-
-
-                ${scoreParts.join(
-                    " + "
-                )}
-
-            ) AS relevance
-
+            crawled_at
 
         FROM pages
 
-
         WHERE
 
-            (
-
-                LOWER(title)
-                LIKE ?
-
-
-                OR
-
-
-                LOWER(description)
-                LIKE ?
-
-
-                OR
-
-
-                LOWER(content)
-                LIKE ?
-
-            )
-
-
-            OR
-
-
             ${conditions.join(
-                " OR "
+                " AND "
             )}
-
 
         ORDER BY
 
-            relevance DESC,
-
             crawled_at DESC
-
 
         LIMIT ?
 
@@ -432,123 +792,21 @@ function searchPages(
     `;
 
 
-    const parameters =
-        [];
+    params.push(
 
+        safeLimit,
 
-    /*
-        Exact phrase scoring.
-    */
-
-    parameters.push(
-
-        phrasePattern,
-
-        phrasePattern
-
-    );
-
-
-    /*
-        Per-word relevance scoring.
-    */
-
-    for (
-        const word
-        of words
-    ) {
-
-        const pattern =
-            `%${word}%`;
-
-
-        parameters.push(
-
-            pattern,
-
-            pattern,
-
-            pattern
-
-        );
-
-    }
-
-
-    /*
-        Exact phrase matching
-        in the WHERE clause.
-    */
-
-    parameters.push(
-
-        phrasePattern,
-
-        phrasePattern,
-
-        phrasePattern
-
-    );
-
-
-    /*
-        Individual word matching
-        in the WHERE clause.
-    */
-
-    for (
-        const word
-        of words
-    ) {
-
-        const pattern =
-            `%${word}%`;
-
-
-        parameters.push(
-
-            pattern,
-
-            pattern,
-
-            pattern
-
-        );
-
-    }
-
-
-    parameters.push(
-
-        Math.max(
-            1,
-            Math.min(
-                Number(
-                    limit
-                ) || 10,
-                100
-            )
-        ),
-
-
-        Math.max(
-            0,
-            Number(
-                offset
-            ) || 0
-        )
+        safeOffset
 
     );
 
 
     return db
-
         .prepare(
             sql
         )
-
         .all(
-            ...parameters
+            ...params
         );
 
 }
@@ -556,23 +814,21 @@ function searchPages(
 
 function getStats() {
 
-    return db
+    return db.prepare(`
 
-        .prepare(`
+        SELECT
 
-            SELECT
+            COUNT(*) AS pages,
 
-                COUNT(*) AS pages,
+            COUNT(
 
-                COUNT(
-                    DISTINCT domain
-                ) AS domains
+                DISTINCT domain
 
-            FROM pages
+            ) AS domains
 
-        `)
+        FROM pages
 
-        .get();
+    `).get();
 
 }
 
