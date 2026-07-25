@@ -1,33 +1,75 @@
-const crypto = require("crypto");
+const crypto =
+    require("crypto");
 
-const sessions = new Map();
+const config =
+    require("./config");
+
+
+const sessions =
+    new Map();
+
 
 const SESSION_TTL =
-    1000 * 60 * 60 * 24;
-
-const MAX_SESSIONS = 5000;
+    config.proxy.sessionTTL;
 
 
-function generateSessionId() {
+const MAX_SESSIONS =
+    config.proxy.maxSessions;
+
+
+function generateSessionID() {
+
     return crypto
-        .randomBytes(32)
-        .toString("hex");
+        .randomBytes(
+            32
+        )
+        .toString(
+            "hex"
+        );
+
 }
 
 
 function createSession() {
+
     if (
         sessions.size >=
         MAX_SESSIONS
     ) {
+
         cleanup();
+
     }
 
-    const id =
-        generateSessionId();
+
+    if (
+        sessions.size >=
+        MAX_SESSIONS
+    ) {
+
+        const oldest =
+            sessions.keys()
+                .next()
+                .value;
+
+
+        if (
+            oldest
+        ) {
+
+            sessions.delete(
+                oldest
+            );
+
+        }
+
+    }
+
 
     const session = {
-        id,
+
+        id:
+            generateSessionID(),
 
         createdAt:
             Date.now(),
@@ -43,107 +85,187 @@ function createSession() {
 
         currentOrigin:
             null
+
     };
 
+
     sessions.set(
-        id,
+
+        session.id,
+
         session
+
     );
 
+
     return session;
+
 }
 
 
-function getSession(id) {
+function getSession(
+    id
+) {
+
     if (
+
         !id ||
-        typeof id !== "string"
+
+        typeof id !==
+        "string"
+
     ) {
+
         return null;
+
     }
+
 
     const session =
-        sessions.get(id);
+        sessions.get(
+            id
+        );
 
-    if (!session) {
-        return null;
-    }
 
     if (
+        !session
+    ) {
+
+        return null;
+
+    }
+
+
+    if (
+
         Date.now() -
         session.lastUsedAt >
         SESSION_TTL
+
     ) {
-        sessions.delete(id);
+
+        sessions.delete(
+            id
+        );
+
 
         return null;
+
     }
+
 
     session.lastUsedAt =
         Date.now();
 
+
     return session;
+
 }
 
 
-function getOrCreate(id) {
+function getOrCreate(
+    id
+) {
+
     return (
-        getSession(id) ||
+
+        getSession(
+            id
+        ) ||
+
         createSession()
+
     );
+
 }
 
 
-function deleteSession(id) {
-    sessions.delete(id);
+function deleteSession(
+    id
+) {
+
+    sessions.delete(
+        id
+    );
+
 }
 
 
 function cleanup() {
+
     const now =
         Date.now();
 
+
     for (
+
         const [
+
             id,
+
             session
+
         ]
+
         of sessions
+
     ) {
+
         if (
+
             now -
             session.lastUsedAt >
             SESSION_TTL
+
         ) {
+
             sessions.delete(
                 id
             );
+
         }
+
     }
+
 }
 
 
 function getStats() {
+
     return {
+
         active:
             sessions.size,
 
         max:
             MAX_SESSIONS
+
     };
+
 }
 
 
 setInterval(
+
     cleanup,
-    1000 * 60 * 15
+
+    1000 *
+    60 *
+    15
+
 ).unref();
 
 
 module.exports = {
+
     createSession,
+
     getSession,
+
     getOrCreate,
+
     deleteSession,
+
     getStats
+
 };
