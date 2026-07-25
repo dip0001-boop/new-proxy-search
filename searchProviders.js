@@ -2,37 +2,25 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 
 const USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36";
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 
-function cleanText(
-    value
-) {
-    return String(
-        value || ""
-    )
-        .replace(
-            /\s+/g,
-            " "
-        )
+function cleanText(value) {
+    return String(value || "")
+        .replace(/\s+/g, " ")
         .trim();
 }
 
 
-function cleanURL(
-    value
-) {
+function cleanURL(value) {
     try {
-        const url =
-            new URL(
-                value
-            );
+        const url = new URL(
+            String(value || "")
+        );
 
         if (
-            url.protocol !==
-                "http:" &&
-            url.protocol !==
-                "https:"
+            url.protocol !== "http:" &&
+            url.protocol !== "https:"
         ) {
             return null;
         }
@@ -45,15 +33,192 @@ function cleanURL(
 }
 
 
+function addResult(
+    results,
+    title,
+    link,
+    snippet,
+    limit
+) {
+    if (
+        results.length >= limit
+    ) {
+        return;
+    }
+
+    const cleanTitle =
+        cleanText(title);
+
+    const cleanLink =
+        cleanURL(link);
+
+    const cleanSnippet =
+        cleanText(snippet);
+
+    if (
+        !cleanTitle ||
+        !cleanLink
+    ) {
+        return;
+    }
+
+    if (
+        results.some(
+            result =>
+                result.link ===
+                cleanLink
+        )
+    ) {
+        return;
+    }
+
+    let source = "";
+
+    try {
+        source =
+            new URL(
+                cleanLink
+            ).hostname;
+
+    } catch {
+        source =
+            cleanLink;
+    }
+
+    results.push({
+        title:
+            cleanTitle,
+
+        link:
+            cleanLink,
+
+        snippet:
+            cleanSnippet ||
+            "No description available.",
+
+        source
+    });
+}
+
+
+function parseBingResults(
+    html,
+    limit
+) {
+    const $ =
+        cheerio.load(
+            html
+        );
+
+    const results = [];
+
+
+    // Normal Bing results
+    $("li.b_algo").each(
+        (
+            _,
+            element
+        ) => {
+            if (
+                results.length >=
+                limit
+            ) {
+                return false;
+            }
+
+            const link =
+                $(element)
+                    .find(
+                        "h2 a"
+                    )
+                    .first();
+
+            addResult(
+                results,
+
+                link.text(),
+
+                link.attr(
+                    "href"
+                ),
+
+                $(element)
+                    .find(
+                        ".b_caption p"
+                    )
+                    .first()
+                    .text(),
+
+                limit
+            );
+        }
+    );
+
+
+    // Alternative result layouts
+    if (
+        results.length ===
+        0
+    ) {
+        $("h2 a").each(
+            (
+                _,
+                element
+            ) => {
+                if (
+                    results.length >=
+                    limit
+                ) {
+                    return false;
+                }
+
+                const link =
+                    $(element);
+
+                const parent =
+                    link.closest(
+                        "li, article, main, section, div"
+                    );
+
+                addResult(
+                    results,
+
+                    link.text(),
+
+                    link.attr(
+                        "href"
+                    ),
+
+                    parent
+                        .find(
+                            "p"
+                        )
+                        .first()
+                        .text(),
+
+                    limit
+                );
+            }
+        );
+    }
+
+
+    return results;
+}
+
+
 async function searchBing(
     query,
     options = {}
 ) {
     const limit =
         Math.min(
-            Number(
-                options.limit
-            ) || 10,
+            Math.max(
+                Number(
+                    options.limit
+                ) || 10,
+                1
+            ),
             50
         );
 
@@ -73,10 +238,9 @@ async function searchBing(
         limit;
 
 
-    const url =
+    const searchURL =
         "https://www.bing.com/search?" +
         new URLSearchParams({
-
             q:
                 query,
 
@@ -91,134 +255,70 @@ async function searchBing(
                 ),
 
             setlang:
-                "en-US"
+                "en-US",
 
+            cc:
+                "US"
         }).toString();
 
 
     const response =
         await axios.get(
-            url,
+            searchURL,
             {
                 timeout:
-                    15000,
+                    20000,
 
                 maxContentLength:
-                    10 *
+                    20 *
+                    1024 *
+                    1024,
+
+                maxBodyLength:
+                    20 *
                     1024 *
                     1024,
 
                 headers: {
-
                     "User-Agent":
                         USER_AGENT,
 
                     "Accept":
-                        "text/html,application/xhtml+xml",
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 
                     "Accept-Language":
-                        "en-US,en;q=0.9"
+                        "en-US,en;q=0.9",
 
+                    "Cache-Control":
+                        "no-cache",
+
+                    "Pragma":
+                        "no-cache"
                 },
 
                 validateStatus:
                     status =>
-                        status >=
-                            200 &&
-                        status <
-                            400
-
+                        status >= 200 &&
+                        status < 400
             }
         );
 
 
-    const $ =
-        cheerio.load(
-            response.data
+    const html =
+        String(
+            response.data ||
+            ""
         );
 
 
     const results =
-        [];
-
-
-    $("li.b_algo").each(
-        (
-            _,
-            element
-        ) => {
-
-            if (
-                results.length >=
-                limit
-            ) {
-                return false;
-            }
-
-
-            const link =
-                $(element)
-                    .find(
-                        "h2 a"
-                    )
-                    .first();
-
-
-            const title =
-                cleanText(
-                    link.text()
-                );
-
-
-            const href =
-                cleanURL(
-                    link.attr(
-                        "href"
-                    )
-                );
-
-
-            const description =
-                cleanText(
-                    $(element)
-                        .find(
-                            ".b_caption p"
-                        )
-                        .first()
-                        .text()
-                );
-
-
-            if (
-                !title ||
-                !href
-            ) {
-                return;
-            }
-
-
-            results.push({
-
-                title,
-
-                url:
-                    href,
-
-                description,
-
-                source:
-                    new URL(
-                        href
-                    ).hostname
-
-            });
-
-        }
-    );
+        parseBingResults(
+            html,
+            limit
+        );
 
 
     return {
-
         provider:
             "bing",
 
@@ -226,9 +326,7 @@ async function searchBing(
 
         total:
             results.length
-
     };
-
 }
 
 
@@ -241,12 +339,10 @@ async function search(
             query
         );
 
-
     if (
         !cleanQuery
     ) {
         return {
-
             provider:
                 "bing",
 
@@ -255,23 +351,17 @@ async function search(
 
             total:
                 0
-
         };
     }
-
 
     return searchBing(
         cleanQuery,
         options
     );
-
 }
 
 
 module.exports = {
-
     search,
-
     searchBing
-
 };
