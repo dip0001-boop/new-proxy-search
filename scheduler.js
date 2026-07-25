@@ -1,9 +1,11 @@
 const crawler =
     require("./crawler");
 
-
 const crawlerState =
     require("./crawlerState");
+
+const config =
+    require("./config");
 
 
 let running =
@@ -19,6 +21,13 @@ let intervalHandle =
 
 
 const CRAWL_INTERVAL =
+    Number(
+
+        config.crawler
+            ?.interval
+
+    ) ||
+
     15 *
     60 *
     1000;
@@ -27,17 +36,14 @@ const CRAWL_INTERVAL =
 async function runCrawler() {
 
     if (
+
         running ||
+
         crawlerState
             .get()
             .running
+
     ) {
-
-        console.log(
-
-            "Crawler already running. Skipping."
-
-        );
 
         return {
 
@@ -53,24 +59,10 @@ async function runCrawler() {
         true;
 
 
-    console.log(
-
-        "Crawler run started."
-
-    );
-
-
     try {
 
         await crawler
             .startCrawler();
-
-
-        console.log(
-
-            "Crawler run finished."
-
-        );
 
 
         return {
@@ -79,7 +71,6 @@ async function runCrawler() {
                 "finished"
 
         };
-
 
     } catch (
         error
@@ -104,7 +95,6 @@ async function runCrawler() {
 
         };
 
-
     } finally {
 
         running =
@@ -120,12 +110,6 @@ function startScheduler() {
     if (
         schedulerStarted
     ) {
-
-        console.log(
-
-            "Crawler scheduler already started."
-
-        );
 
         return;
 
@@ -160,6 +144,16 @@ function startScheduler() {
         );
 
 
+    if (
+
+        intervalHandle.unref
+
+    ) {
+
+        intervalHandle.unref();
+
+    }
+
 }
 
 
@@ -170,9 +164,7 @@ function stopScheduler() {
     ) {
 
         clearInterval(
-
             intervalHandle
-
         );
 
 
@@ -184,13 +176,6 @@ function stopScheduler() {
 
     schedulerStarted =
         false;
-
-
-    console.log(
-
-        "Crawler scheduler stopped."
-
-    );
 
 }
 
