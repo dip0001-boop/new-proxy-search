@@ -42,6 +42,17 @@ module.exports = {
 
     search: {
 
+        requestTimeout:
+            15000,
+
+        maxResponseSize:
+            10 *
+            1024 *
+            1024,
+
+        maxResults:
+            50,
+
         resultsPerPage:
             10,
 
