@@ -11,9 +11,7 @@ const {
     storeSetCookies,
     getCookieHeader
 } =
-    require(
-        "./proxySession"
-    );
+    require("./proxySession");
 
 
 const httpAgent =
@@ -92,7 +90,9 @@ const HOP_BY_HOP =
 
         "host",
 
-        "content-length"
+        "content-length",
+
+        "content-encoding"
 
     ]);
 
@@ -102,6 +102,7 @@ function buildHeaders(
     session,
     targetURL
 ) {
+
     const headers = {};
 
 
@@ -125,6 +126,10 @@ function buildHeaders(
 
         "if-modified-since",
 
+        "if-range",
+
+        "cache-control",
+
         "user-agent"
 
     ];
@@ -134,6 +139,7 @@ function buildHeaders(
         const name
         of allowed
     ) {
+
         const value =
             req.headers[
                 name
@@ -143,24 +149,32 @@ function buildHeaders(
         if (
             value
         ) {
+
             headers[name] =
                 value;
+
         }
+
     }
 
 
     const cookies =
         getCookieHeader(
+
             session,
+
             targetURL
+
         );
 
 
     if (
         cookies
     ) {
+
         headers.cookie =
             cookies;
+
     }
 
 
@@ -169,32 +183,101 @@ function buildHeaders(
             "user-agent"
         ]
     ) {
+
         headers[
             "user-agent"
         ] =
             "Mozilla/5.0";
+
     }
 
 
     return headers;
+
 }
 
 
-function getRequestBody(
+function getBody(
     req
 ) {
+
     if (
+
         req.method ===
             "GET" ||
 
         req.method ===
             "HEAD"
+
     ) {
+
         return undefined;
+
+    }
+
+
+    if (
+        Buffer.isBuffer(
+            req.body
+        )
+    ) {
+
+        return req.body;
+
+    }
+
+
+    if (
+        typeof req.body ===
+        "object"
+    ) {
+
+        const contentType =
+            String(
+
+                req.headers[
+                    "content-type"
+                ] ||
+
+                ""
+
+            );
+
+
+        if (
+
+            contentType.includes(
+                "application/json"
+            )
+
+        ) {
+
+            return JSON.stringify(
+                req.body
+            );
+
+        }
+
+
+        if (
+
+            contentType.includes(
+                "application/x-www-form-urlencoded"
+            )
+
+        ) {
+
+            return new URLSearchParams(
+                req.body
+            ).toString();
+
+        }
+
     }
 
 
     return req.body;
+
 }
 
 
@@ -203,6 +286,7 @@ async function request(
     session,
     targetURL
 ) {
+
     const response =
         await client.request({
 
@@ -214,13 +298,17 @@ async function request(
 
             headers:
                 buildHeaders(
+
                     req,
+
                     session,
+
                     targetURL
+
                 ),
 
             data:
-                getRequestBody(
+                getBody(
                     req
                 ),
 
@@ -244,6 +332,7 @@ async function request(
 
 
     return response;
+
 }
 
 
@@ -251,15 +340,25 @@ function copyHeaders(
     response,
     res
 ) {
+
     for (
+
         const [
+
             name,
+
             value
+
         ]
+
         of Object.entries(
+
             response.headers
+
         )
+
     ) {
+
         const lower =
             name.toLowerCase();
 
@@ -269,7 +368,9 @@ function copyHeaders(
                 lower
             )
         ) {
+
             continue;
+
         }
 
 
@@ -277,19 +378,29 @@ function copyHeaders(
             lower ===
             "location"
         ) {
+
             continue;
+
         }
 
 
         res.setHeader(
+
             name,
+
             value
+
         );
+
     }
+
 }
 
 
 module.exports = {
+
     request,
+
     copyHeaders
+
 };
