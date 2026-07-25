@@ -1,16 +1,15 @@
-const database =
-    require("./database");
+const axios = require("axios");
+const cheerio = require("cheerio");
 
-const config =
-    require("./config");
+const USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36";
 
 
 function cleanText(
     value
 ) {
     return String(
-        value ||
-        ""
+        value || ""
     )
         .replace(
             /\s+/g,
@@ -20,198 +19,216 @@ function cleanText(
 }
 
 
-function getSearchLimit(
-    options
+function cleanURL(
+    value
 ) {
-    const requested =
-        Number(
-            options.limit
-        );
+    try {
+        const url =
+            new URL(
+                value
+            );
 
+        if (
+            url.protocol !==
+                "http:" &&
+            url.protocol !==
+                "https:"
+        ) {
+            return null;
+        }
 
-    const defaultLimit =
-        Number(
-            config.search.resultsPerPage
-        ) || 10;
+        return url.toString();
 
-
-    const maxLimit =
-        Number(
-            config.search.maxResults
-        ) || 100;
-
-
-    return Math.min(
-
-        Math.max(
-
-            Number.isFinite(
-                requested
-            )
-
-                ? requested
-
-                : defaultLimit,
-
-            1
-
-        ),
-
-        maxLimit
-
-    );
+    } catch {
+        return null;
+    }
 }
 
 
-function getSearchPage(
-    options
+async function searchBing(
+    query,
+    options = {}
 ) {
+    const limit =
+        Math.min(
+            Number(
+                options.limit
+            ) || 10,
+            50
+        );
+
     const page =
-        Number(
-            options.page
+        Math.max(
+            Number(
+                options.page
+            ) || 1,
+            1
+        );
+
+    const first =
+        (
+            page -
+            1
+        ) *
+        limit;
+
+
+    const url =
+        "https://www.bing.com/search?" +
+        new URLSearchParams({
+
+            q:
+                query,
+
+            count:
+                String(
+                    limit
+                ),
+
+            first:
+                String(
+                    first
+                ),
+
+            setlang:
+                "en-US"
+
+        }).toString();
+
+
+    const response =
+        await axios.get(
+            url,
+            {
+                timeout:
+                    15000,
+
+                maxContentLength:
+                    10 *
+                    1024 *
+                    1024,
+
+                headers: {
+
+                    "User-Agent":
+                        USER_AGENT,
+
+                    "Accept":
+                        "text/html,application/xhtml+xml",
+
+                    "Accept-Language":
+                        "en-US,en;q=0.9"
+
+                },
+
+                validateStatus:
+                    status =>
+                        status >=
+                            200 &&
+                        status <
+                            400
+
+            }
         );
 
 
-    return Math.max(
-
-        Number.isFinite(
-            page
-        )
-
-            ? Math.floor(
-                page
-            )
-
-            : 1,
-
-        1
-
-    );
-}
+    const $ =
+        cheerio.load(
+            response.data
+        );
 
 
-function normaliseResult(
-    page
-) {
-    let source =
-        page.domain ||
-        "";
+    const results =
+        [];
 
 
-    if (
-        !source
-    ) {
-        try {
+    $("li.b_algo").each(
+        (
+            _,
+            element
+        ) => {
 
-            source =
-                new URL(
-                    page.url
-                ).hostname;
+            if (
+                results.length >=
+                limit
+            ) {
+                return false;
+            }
 
-        } catch {
 
-            source =
-                "";
+            const link =
+                $(element)
+                    .find(
+                        "h2 a"
+                    )
+                    .first();
+
+
+            const title =
+                cleanText(
+                    link.text()
+                );
+
+
+            const href =
+                cleanURL(
+                    link.attr(
+                        "href"
+                    )
+                );
+
+
+            const description =
+                cleanText(
+                    $(element)
+                        .find(
+                            ".b_caption p"
+                        )
+                        .first()
+                        .text()
+                );
+
+
+            if (
+                !title ||
+                !href
+            ) {
+                return;
+            }
+
+
+            results.push({
+
+                title,
+
+                url:
+                    href,
+
+                description,
+
+                source:
+                    new URL(
+                        href
+                    ).hostname
+
+            });
 
         }
-    }
-
-
-    source =
-        source
-            .replace(
-                /^www\./i,
-                ""
-            );
+    );
 
 
     return {
 
-        title:
-            cleanText(
-                page.title
-            ) ||
+        provider:
+            "bing",
 
-            "Untitled page",
+        results,
 
-
-        link:
-            page.url,
-
-
-        snippet:
-            cleanText(
-                page.description
-            ) ||
-
-            cleanText(
-                page.content
-            )
-                .slice(
-                    0,
-                    300
-                ) ||
-
-            "No description available.",
-
-
-        source,
-
-
-        relevance:
-            Number(
-                page.relevance
-            ) || 0,
-
-
-        crawledAt:
-            page.crawled_at
+        total:
+            results.length
 
     };
-}
 
-
-function removeDuplicateURLs(
-    results
-) {
-    const seen =
-        new Set();
-
-
-    return results.filter(
-
-        result => {
-
-            const url =
-                String(
-                    result.link
-                )
-                    .trim()
-                    .toLowerCase();
-
-
-            if (
-                !url ||
-                seen.has(
-                    url
-                )
-            ) {
-
-                return false;
-
-            }
-
-
-            seen.add(
-                url
-            );
-
-
-            return true;
-
-        }
-
-    );
 }
 
 
@@ -228,11 +245,10 @@ async function search(
     if (
         !cleanQuery
     ) {
-
         return {
 
             provider:
-                "THE VAULT INDEX",
+                "bing",
 
             results:
                 [],
@@ -241,74 +257,21 @@ async function search(
                 0
 
         };
-
     }
 
 
-    const limit =
-        getSearchLimit(
-            options
-        );
-
-
-    const page =
-        getSearchPage(
-            options
-        );
-
-
-    const offset =
-        (
-
-            page -
-            1
-
-        ) *
-
-        limit;
-
-
-    const indexedPages =
-        database.searchPages(
-
-            cleanQuery,
-
-            limit,
-
-            offset
-
-        );
-
-
-    const results =
-        removeDuplicateURLs(
-
-            indexedPages.map(
-
-                normaliseResult
-
-            )
-
-        );
-
-
-    return {
-
-        provider:
-            "THE VAULT INDEX",
-
-        results,
-
-        total:
-            results.length
-
-    };
+    return searchBing(
+        cleanQuery,
+        options
+    );
 
 }
 
 
 module.exports = {
 
-    search
+    search,
+
+    searchBing
 
 };
