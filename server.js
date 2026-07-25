@@ -1,9 +1,8 @@
 const express = require("express");
 const path = require("path");
-const axios = require("axios");
-const cheerio = require("cheerio");
 const http = require("http");
-const https = require("https");
+const crypto = require("crypto");
+const cheerio = require("cheerio");
 const compression = require("compression");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -17,90 +16,32 @@ const crawlerState = require("./crawlerState");
 const searchEngine = require("./searchProviders");
 const scheduler = require("./scheduler");
 
-const app = express();
+const sessionManager =
+    require("./sessionManager");
+
+const proxyRequest =
+    require("./proxyRequest");
+
+const proxySession =
+    require("./proxySession");
+
+const websocketProxy =
+    require("./websocketProxy");
 
 
-/* =================================
-   PERFORMANCE
-================================= */
-
-const httpAgent =
-    new http.Agent({
-        keepAlive: true,
-        maxSockets: 256,
-        maxFreeSockets: 64,
-        timeout: 60000
-    });
+const app =
+    express();
 
 
-const httpsAgent =
-    new https.Agent({
-        keepAlive: true,
-        maxSockets: 256,
-        maxFreeSockets: 64,
-        timeout: 60000
-    });
-
-
-const proxyClient =
-    axios.create({
-
-        httpAgent,
-
-        httpsAgent,
-
-        timeout:
-            config.proxy.requestTimeout,
-
-        maxRedirects:
-            config.proxy.maxRedirects,
-
-        maxContentLength:
-            config.proxy.maxResponseSize,
-
-        maxBodyLength:
-            config.proxy.maxResponseSize,
-
-        decompress:
-            true,
-
-        validateStatus:
-            status =>
-                status >= 200 &&
-                status < 400
-
-    });
+const server =
+    http.createServer(
+        app
+    );
 
 
 const USER_AGENT =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 THE-VAULT";
 
-
-const HOP_BY_HOP_HEADERS =
-    new Set([
-
-        "connection",
-
-        "keep-alive",
-
-        "proxy-authenticate",
-
-        "proxy-authorization",
-
-        "te",
-
-        "trailer",
-
-        "transfer-encoding",
-
-        "upgrade"
-
-    ]);
-
-
-/* =================================
-   APP
-================================= */
 
 app.set(
     "trust proxy",
@@ -133,7 +74,7 @@ app.use(
 app.use(
     express.json({
         limit:
-            "1mb"
+            "10mb"
     })
 );
 
@@ -141,10 +82,10 @@ app.use(
 app.use(
     express.urlencoded({
         extended:
-            false,
+            true,
 
         limit:
-            "1mb"
+            "10mb"
     })
 );
 
@@ -185,10 +126,9 @@ app.use(
 function getTargetURL(
     rawURL
 ) {
-
     try {
 
-        const parsed =
+        const target =
             new URL(
                 String(
                     rawURL ||
@@ -199,35 +139,32 @@ function getTargetURL(
 
         if (
 
-            parsed.protocol !==
+            target.protocol !==
                 "http:" &&
 
-            parsed.protocol !==
+            target.protocol !==
                 "https:"
 
         ) {
-
             return null;
-
         }
 
 
-        return parsed;
+        return target;
 
     } catch {
 
         return null;
 
     }
-
 }
 
 
 function makeProxyURL(
     rawURL,
-    baseURL
+    baseURL,
+    sessionID
 ) {
-
     try {
 
         const absolute =
@@ -246,9 +183,7 @@ function makeProxyURL(
                 "https:"
 
         ) {
-
             return rawURL;
-
         }
 
 
@@ -258,6 +193,12 @@ function makeProxyURL(
 
             encodeURIComponent(
                 absolute.toString()
+            ) +
+
+            "&session=" +
+
+            encodeURIComponent(
+                sessionID
             )
 
         );
@@ -267,20 +208,17 @@ function makeProxyURL(
         return rawURL;
 
     }
-
 }
 
 
-function isSkippableURL(
+function shouldSkipURL(
     value
 ) {
-
     const url =
         String(
             value ||
             ""
         )
-
             .trim()
             .toLowerCase();
 
@@ -320,106 +258,88 @@ function isSkippableURL(
 
 function rewriteCSSURLs(
     css,
-    baseURL
+    baseURL,
+    sessionID
 ) {
-
     return String(
         css ||
         ""
-    )
+    ).replace(
 
-        .replace(
+        /url\(\s*(['"]?)(.*?)\1\s*\)/gi,
 
-            /url\(\s*(['"]?)(.*?)\1\s*\)/gi,
+        (
+            match,
+            quote,
+            value
+        ) => {
 
-            (
-
-                match,
-
-                quote,
-
-                value
-
-            ) => {
-
-                const trimmed =
-                    value.trim();
+            const clean =
+                value.trim();
 
 
-                if (
-                    isSkippableURL(
-                        trimmed
-                    )
-                ) {
-
-                    return match;
-
-                }
-
-
-                return (
-
-                    `url("${makeProxyURL(
-                        trimmed,
-                        baseURL
-                    )}")`
-
-                );
-
+            if (
+                shouldSkipURL(
+                    clean
+                )
+            ) {
+                return match;
             }
 
-        );
+
+            return (
+
+                `url("${makeProxyURL(
+                    clean,
+                    baseURL,
+                    sessionID
+                )}")`
+
+            );
+
+        }
+
+    );
 
 }
 
 
 function rewriteSrcset(
     value,
-    baseURL
+    baseURL,
+    sessionID
 ) {
-
     return String(
         value ||
         ""
     )
-
         .split(",")
-
         .map(
             item => {
 
                 const parts =
-                    item.trim()
+                    item
+                        .trim()
                         .split(
                             /\s+/
                         );
 
 
                 if (
-                    parts.length ===
-                    0
-                ) {
-
-                    return item;
-
-                }
-
-
-                if (
-                    isSkippableURL(
+                    !parts.length ||
+                    shouldSkipURL(
                         parts[0]
                     )
                 ) {
-
                     return item;
-
                 }
 
 
                 parts[0] =
                     makeProxyURL(
                         parts[0],
-                        baseURL
+                        baseURL,
+                        sessionID
                     );
 
 
@@ -429,7 +349,6 @@ function rewriteSrcset(
 
             }
         )
-
         .join(
             ", "
         );
@@ -439,20 +358,16 @@ function rewriteSrcset(
 
 function rewriteHTML(
     html,
-    pageURL
+    pageURL,
+    sessionID
 ) {
-
     const $ =
         cheerio.load(
-
             html,
-
             {
                 decodeEntities:
                     false
-
             }
-
         );
 
 
@@ -460,7 +375,6 @@ function rewriteHTML(
 
 
     $("[href]").each(
-
         (
             _,
             element
@@ -473,22 +387,19 @@ function rewriteHTML(
 
 
             if (
-
                 href &&
-
-                !isSkippableURL(
+                !shouldSkipURL(
                     href
                 )
-
             ) {
 
                 $(element).attr(
-
                     "href",
 
                     makeProxyURL(
                         href,
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -496,12 +407,10 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     $("[src]").each(
-
         (
             _,
             element
@@ -514,22 +423,19 @@ function rewriteHTML(
 
 
             if (
-
                 src &&
-
-                !isSkippableURL(
+                !shouldSkipURL(
                     src
                 )
-
             ) {
 
                 $(element).attr(
-
                     "src",
 
                     makeProxyURL(
                         src,
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -537,12 +443,10 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     $("[srcset]").each(
-
         (
             _,
             element
@@ -559,12 +463,12 @@ function rewriteHTML(
             ) {
 
                 $(element).attr(
-
                     "srcset",
 
                     rewriteSrcset(
                         srcset,
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -572,12 +476,10 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     $("[action]").each(
-
         (
             _,
             element
@@ -590,22 +492,19 @@ function rewriteHTML(
 
 
             if (
-
                 action &&
-
-                !isSkippableURL(
+                !shouldSkipURL(
                     action
                 )
-
             ) {
 
                 $(element).attr(
-
                     "action",
 
                     makeProxyURL(
                         action,
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -613,12 +512,10 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     $("[style]").each(
-
         (
             _,
             element
@@ -635,12 +532,12 @@ function rewriteHTML(
             ) {
 
                 $(element).attr(
-
                     "style",
 
                     rewriteCSSURLs(
                         style,
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -648,12 +545,10 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     $("style").each(
-
         (
             _,
             element
@@ -671,7 +566,8 @@ function rewriteHTML(
 
                     rewriteCSSURLs(
                         css,
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -679,12 +575,10 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     $("meta[http-equiv='refresh']").each(
-
         (
             _,
             element
@@ -699,17 +593,13 @@ function rewriteHTML(
             if (
                 !content
             ) {
-
                 return;
-
             }
 
 
             const match =
                 content.match(
-
                     /^(\s*\d+\s*;\s*url=)(.*)$/i
-
                 );
 
 
@@ -718,14 +608,14 @@ function rewriteHTML(
             ) {
 
                 $(element).attr(
-
                     "content",
 
                     match[1] +
 
                     makeProxyURL(
                         match[2],
-                        pageURL
+                        pageURL,
+                        sessionID
                     )
 
                 );
@@ -733,178 +623,19 @@ function rewriteHTML(
             }
 
         }
-
     );
 
 
     return (
-
         "<!DOCTYPE html>" +
-
         $.html()
-
     );
 
 }
 
 
 /* =================================
-   HEADER HELPERS
-================================= */
-
-function getForwardHeaders(
-    req
-) {
-
-    const headers = {
-
-        "User-Agent":
-            req.headers[
-                "user-agent"
-            ] ||
-            USER_AGENT,
-
-        "Accept":
-            req.headers[
-                "accept"
-            ] ||
-            "*/*",
-
-        "Accept-Language":
-            req.headers[
-                "accept-language"
-            ] ||
-            "en-US,en;q=0.9"
-
-    };
-
-
-    const allowed = [
-
-        "content-type",
-
-        "content-length",
-
-        "accept-encoding",
-
-        "referer",
-
-        "origin",
-
-        "range",
-
-        "if-none-match",
-
-        "if-modified-since"
-
-    ];
-
-
-    for (
-        const name
-        of allowed
-    ) {
-
-        const value =
-            req.headers[
-                name
-            ];
-
-
-        if (
-            value
-        ) {
-
-            headers[name] =
-                value;
-
-        }
-
-    }
-
-
-    return headers;
-
-}
-
-
-function copyResponseHeaders(
-    response,
-    res
-) {
-
-    for (
-
-        const [
-            name,
-            value
-        ]
-
-        of Object.entries(
-            response.headers
-        )
-
-    ) {
-
-        const lower =
-            name.toLowerCase();
-
-
-        if (
-
-            HOP_BY_HOP_HEADERS.has(
-                lower
-            )
-
-        ) {
-
-            continue;
-
-        }
-
-
-        if (
-            lower ===
-            "content-length"
-        ) {
-
-            continue;
-
-        }
-
-
-        if (
-            lower ===
-            "content-encoding"
-        ) {
-
-            continue;
-
-        }
-
-
-        if (
-            lower ===
-            "location"
-        ) {
-
-            continue;
-
-        }
-
-
-        res.setHeader(
-            name,
-            value
-        );
-
-    }
-
-}
-
-
-/* =================================
-   PROXY
+   PROXY ROUTE
 ================================= */
 
 app.all(
@@ -912,11 +643,8 @@ app.all(
     "/proxy",
 
     async (
-
         req,
-
         res
-
     ) => {
 
         const target =
@@ -930,11 +658,9 @@ app.all(
         ) {
 
             return res
-
                 .status(
                     400
                 )
-
                 .send(
                     "Invalid proxy URL."
                 );
@@ -942,64 +668,64 @@ app.all(
         }
 
 
-        const method =
-            req.method;
+        const session =
+            sessionManager.getOrCreate(
+                req.query.session
+            );
 
 
-        const startTime =
-            Date.now();
+        const sessionID =
+            session.id;
+
+
+        session.currentURL =
+            target.toString();
+
+
+        session.currentOrigin =
+            target.origin;
+
+
+        res.cookie(
+            "vault_session",
+            sessionID,
+            {
+                httpOnly:
+                    true,
+
+                sameSite:
+                    "lax",
+
+                secure:
+                    req.secure,
+
+                maxAge:
+                    1000 *
+                    60 *
+                    60 *
+                    24
+            }
+        );
 
 
         try {
 
-            console.log(
-
-                `PROXY ${method}: ${target.toString()}`
-
-            );
-
-
             const response =
-                await proxyClient.request({
+                await proxyRequest.request(
 
-                    method,
+                    req,
 
-                    url:
-                        target.toString(),
+                    session,
 
-                    responseType:
-                        "arraybuffer",
-
-                    headers:
-                        getForwardHeaders(
-                            req
-                        ),
-
-                    data:
-
-                        method ===
-                            "GET" ||
-
-                        method ===
-                            "HEAD"
-
-                            ? undefined
-
-                            : req.body
-
-                });
-
-
-            const contentType =
-                String(
-
-                    response.headers[
-                        "content-type"
-                    ] ||
-
-                    ""
+                    target
 
                 );
+
+
+            proxyRequest.copyHeaders(
+                response,
+                res
+            );
 
 
             res.status(
@@ -1008,62 +734,49 @@ app.all(
 
 
             res.setHeader(
-
                 "X-Vault-Proxy",
-
                 "THE VAULT"
-
             );
 
 
-            res.setHeader(
+            const contentType =
+                String(
 
-                "X-Vault-Response-Time",
+                    response.headers[
+                        "content-type"
+                    ] ||
+                    ""
 
-                `${Date.now() - startTime}ms`
-
-            );
+                );
 
 
-            copyResponseHeaders(
-                response,
-                res
-            );
+            const data =
+                Buffer.from(
+                    response.data
+                );
 
 
             if (
-
                 contentType.includes(
                     "text/html"
                 )
-
             ) {
 
-                const html =
-                    Buffer
-
-                        .from(
-                            response.data
-                        )
-
-                        .toString(
-                            "utf8"
-                        );
-
-
                 return res
-
                     .type(
                         "html"
                     )
-
                     .send(
 
                         rewriteHTML(
 
-                            html,
+                            data.toString(
+                                "utf8"
+                            ),
 
-                            target.toString()
+                            target.toString(),
+
+                            sessionID
 
                         )
 
@@ -1073,38 +786,26 @@ app.all(
 
 
             if (
-
                 contentType.includes(
                     "text/css"
                 )
-
             ) {
 
-                const css =
-                    Buffer
-
-                        .from(
-                            response.data
-                        )
-
-                        .toString(
-                            "utf8"
-                        );
-
-
                 return res
-
                     .type(
                         "css"
                     )
-
                     .send(
 
                         rewriteCSSURLs(
 
-                            css,
+                            data.toString(
+                                "utf8"
+                            ),
 
-                            target.toString()
+                            target.toString(),
+
+                            sessionID
 
                         )
 
@@ -1114,11 +815,7 @@ app.all(
 
 
             return res.send(
-
-                Buffer.from(
-                    response.data
-                )
-
+                data
             );
 
         } catch (
@@ -1126,24 +823,17 @@ app.all(
         ) {
 
             console.error(
-
                 "PROXY ERROR:",
-
                 error.message
-
             );
 
 
             return res
-
                 .status(
                     502
                 )
-
                 .send(
-
                     `
-
                     <h1>
                         THE VAULT PROXY ERROR
                     </h1>
@@ -1152,11 +842,8 @@ app.all(
                         ${String(
                             error.message
                         )}
-
                     </p>
-
                     `
-
                 );
 
         }
@@ -1171,15 +858,10 @@ app.all(
 ================================= */
 
 app.get(
-
     "/health",
-
     (
-
         req,
-
         res
-
     ) => {
 
         res.json({
@@ -1189,6 +871,9 @@ app.get(
 
             service:
                 "THE VAULT PROXY",
+
+            sessions:
+                sessionManager.getStats(),
 
             index:
                 database.getStats(),
@@ -1200,15 +885,12 @@ app.get(
                 crawlQueue.getStats(),
 
             timestamp:
-
                 new Date()
-
                     .toISOString()
 
         });
 
     }
-
 );
 
 
@@ -1217,15 +899,10 @@ app.get(
 ================================= */
 
 app.get(
-
     "/api/search",
-
     async (
-
         req,
-
         res
-
     ) => {
 
         const startTime =
@@ -1235,7 +912,6 @@ app.get(
         try {
 
             const query =
-
                 typeof req.query.q ===
                 "string"
 
@@ -1249,17 +925,12 @@ app.get(
             ) {
 
                 return res
-
                     .status(
                         400
                     )
-
                     .json({
-
                         error:
-
                             "Please enter a search query."
-
                     });
 
             }
@@ -1268,41 +939,29 @@ app.get(
             if (
 
                 query.length >
-
                 config.security.maxQueryLength
 
             ) {
 
                 return res
-
                     .status(
                         400
                     )
-
                     .json({
-
                         error:
-
                             "Search query is too long."
-
                     });
 
             }
 
 
             const page =
-
                 Math.max(
 
                     Number.parseInt(
-
                         req.query.page,
-
                         10
-
-                    ) ||
-
-                    1,
+                    ) || 1,
 
                     1
 
@@ -1314,9 +973,7 @@ app.get(
 
 
             const cacheKey =
-
                 `live:${query.toLowerCase()}` +
-
                 `:page:${page}`;
 
 
@@ -1335,13 +992,7 @@ app.get(
                     ...cached,
 
                     cached:
-                        true,
-
-                    time:
-
-                        Date.now() -
-
-                        startTime
+                        true
 
                 });
 
@@ -1354,11 +1005,8 @@ app.get(
                     query,
 
                     {
-
                         limit,
-
                         page
-
                     }
 
                 );
@@ -1383,9 +1031,7 @@ app.get(
                     false,
 
                 time:
-
                     Date.now() -
-
                     startTime
 
             };
@@ -1411,34 +1057,24 @@ app.get(
         ) {
 
             console.error(
-
                 "SEARCH ERROR:",
-
                 error
-
             );
 
 
             return res
-
                 .status(
                     500
                 )
-
                 .json({
-
                     error:
-
                         error.message ||
-
                         "Search failed."
-
                 });
 
         }
 
     }
-
 );
 
 
@@ -1447,21 +1083,19 @@ app.get(
 ================================= */
 
 app.get(
-
     "/api/stats",
-
     (
-
         req,
-
         res
-
     ) => {
 
         res.json({
 
             service:
                 "THE VAULT PROXY",
+
+            sessions:
+                sessionManager.getStats(),
 
             index:
                 database.getStats(),
@@ -1475,7 +1109,6 @@ app.get(
         });
 
     }
-
 );
 
 
@@ -1484,21 +1117,14 @@ app.get(
 ================================= */
 
 app.post(
-
     "/api/crawl",
-
     (
-
         req,
-
         res
-
     ) => {
 
         if (
-
             crawlerState.get().running
-
         ) {
 
             return res.json({
@@ -1522,7 +1148,6 @@ app.post(
         scheduler.runCrawler();
 
     }
-
 );
 
 
@@ -1531,11 +1156,9 @@ app.post(
 ================================= */
 
 app.use(
-
     express.static(
         __dirname
     )
-
 );
 
 
@@ -1544,31 +1167,20 @@ app.use(
 ================================= */
 
 app.get(
-
     "*",
-
     (
-
         req,
-
         res
-
     ) => {
 
         res.sendFile(
-
             path.join(
-
                 __dirname,
-
                 "index.html"
-
             )
-
         );
 
     }
-
 );
 
 
@@ -1576,10 +1188,8 @@ app.get(
    START
 ================================= */
 
-app.listen(
-
+server.listen(
     config.port,
-
     () => {
 
         console.log(
@@ -1592,5 +1202,19 @@ app.listen(
         scheduler.startScheduler();
 
     }
+);
+
+
+/* =================================
+   WEBSOCKET PROXY
+================================= */
+
+websocketProxy.attachWebSocketProxy(
+
+    server,
+
+    getTargetURL,
+
+    sessionManager.getSession
 
 );
