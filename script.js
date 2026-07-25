@@ -95,20 +95,18 @@ const quickSearchButtons =
 
 
 let currentQuery = "";
-
 let currentPage = 1;
-
 let lastSearchURL = "";
 
 
-/* =================================
-   HELPERS
-================================= */
-
-function getDisplayURL(url) {
+function getDisplayURL(
+    url
+) {
     try {
         const parsed =
-            new URL(url);
+            new URL(
+                url
+            );
 
         return (
             parsed.hostname +
@@ -121,7 +119,9 @@ function getDisplayURL(url) {
 }
 
 
-function getProxyURL(url) {
+function getProxyURL(
+    url
+) {
     return (
         "/proxy?url=" +
         encodeURIComponent(
@@ -131,7 +131,9 @@ function getProxyURL(url) {
 }
 
 
-function escapeHTML(value) {
+function escapeHTML(
+    value
+) {
     const div =
         document.createElement(
             "div"
@@ -144,47 +146,75 @@ function escapeHTML(value) {
 }
 
 
-function show(element) {
-    element.classList.remove(
-        "hidden"
-    );
+function show(
+    element
+) {
+    if (
+        element
+    ) {
+        element.classList.remove(
+            "hidden"
+        );
+    }
 }
 
 
-function hide(element) {
-    element.classList.add(
-        "hidden"
-    );
+function hide(
+    element
+) {
+    if (
+        element
+    ) {
+        element.classList.add(
+            "hidden"
+        );
+    }
 }
 
 
 function resetStates() {
-    hide(loadingState);
+    hide(
+        loadingState
+    );
 
-    hide(errorState);
+    hide(
+        errorState
+    );
 
-    hide(emptyState);
+    hide(
+        emptyState
+    );
 
-    hide(pagination);
+    hide(
+        pagination
+    );
 
     resultsContainer.innerHTML =
         "";
 }
 
 
-/* =================================
-   DISPLAY RESULTS
-================================= */
-
-function displayResults(data) {
+function displayResults(
+    data
+) {
     resultsContainer.innerHTML =
         "";
 
+    const results =
+        Array.isArray(
+            data.results
+        )
+            ? data.results
+            : [];
+
+
     if (
-        !data.results ||
-        data.results.length === 0
+        results.length ===
+        0
     ) {
-        show(emptyState);
+        show(
+            emptyState
+        );
 
         resultsMeta.textContent =
             "No results found";
@@ -192,9 +222,10 @@ function displayResults(data) {
         return;
     }
 
+
     for (
         const result
-        of data.results
+        of results
     ) {
         const article =
             document.createElement(
@@ -204,28 +235,21 @@ function displayResults(data) {
         article.className =
             "search-result";
 
+
         const originalURL =
             String(
                 result.link ||
+                result.url ||
                 ""
             );
 
-        const proxyURL =
-            getProxyURL(
-                originalURL
-            );
 
-        const safeProxyURL =
-            escapeHTML(
-                proxyURL
-            );
+        if (
+            !originalURL
+        ) {
+            continue;
+        }
 
-        const displayURL =
-            escapeHTML(
-                getDisplayURL(
-                    originalURL
-                )
-            );
 
         const title =
             escapeHTML(
@@ -233,20 +257,35 @@ function displayResults(data) {
                 "Untitled page"
             );
 
+
         const snippet =
             escapeHTML(
                 result.snippet ||
+                result.description ||
                 "No description available."
             );
 
+
+        const proxyURL =
+            getProxyURL(
+                originalURL
+            );
+
+
         article.innerHTML = `
             <div class="result-url">
-                ${displayURL}
+                ${escapeHTML(
+                    getDisplayURL(
+                        originalURL
+                    )
+                )}
             </div>
 
             <h3>
                 <a
-                    href="${safeProxyURL}"
+                    href="${escapeHTML(
+                        proxyURL
+                    )}"
                     class="proxy-result-link"
                 >
                     ${title}
@@ -258,44 +297,40 @@ function displayResults(data) {
             </p>
         `;
 
+
         resultsContainer.appendChild(
             article
         );
     }
 
+
     resultsMeta.textContent =
-        `${data.count || 0} results`;
+        `${results.length} results`;
+
 
     pageNumber.textContent =
         `PAGE ${currentPage}`;
 
-    if (
-        currentPage > 1
-    ) {
-        previousPage.disabled =
-            false;
 
-        show(previousPage);
+    previousPage.disabled =
+        currentPage <= 1;
 
-    } else {
-        previousPage.disabled =
-            true;
-    }
 
-    show(pagination);
+    show(
+        pagination
+    );
 }
 
-
-/* =================================
-   SEARCH
-================================= */
 
 async function performSearch(
     query,
     page = 1
 ) {
     const cleanQuery =
-        query.trim();
+        String(
+            query || ""
+        ).trim();
+
 
     if (
         !cleanQuery
@@ -303,24 +338,35 @@ async function performSearch(
         return;
     }
 
+
     currentQuery =
         cleanQuery;
 
     currentPage =
         page;
 
+
     lastSearchURL =
         `/api/search?q=${encodeURIComponent(
             cleanQuery
         )}&page=${page}`;
 
-    hide(homeSection);
 
-    show(resultsSection);
+    hide(
+        homeSection
+    );
+
+    show(
+        resultsSection
+    );
+
 
     resetStates();
 
-    show(loadingState);
+    show(
+        loadingState
+    );
+
 
     resultsTitle.textContent =
         `"${cleanQuery}"`;
@@ -328,62 +374,89 @@ async function performSearch(
     resultsMeta.textContent =
         "Searching...";
 
-    window.scrollTo({
-        top: 0,
-        behavior: "instant"
-    });
 
     try {
         const response =
             await fetch(
-                lastSearchURL
+                lastSearchURL,
+                {
+                    headers: {
+                        Accept:
+                            "application/json"
+                    }
+                }
             );
+
+
+        const text =
+            await response.text();
+
+
+        let data;
+
+
+        try {
+            data =
+                JSON.parse(
+                    text
+                );
+
+        } catch {
+            throw new Error(
+                "The server returned invalid JSON."
+            );
+        }
+
 
         if (
             !response.ok
         ) {
             throw new Error(
+                data.error ||
                 `Server returned ${response.status}`
             );
         }
 
-        const data =
-            await response.json();
 
-        hide(loadingState);
+        hide(
+            loadingState
+        );
+
 
         displayResults(
             data
         );
 
-        window.scrollTo({
-            top: 0,
-            behavior: "smooth"
-        });
 
-    } catch (error) {
+    } catch (
+        error
+    ) {
         console.error(
             "SEARCH ERROR:",
             error
         );
 
-        hide(loadingState);
+
+        hide(
+            loadingState
+        );
+
 
         errorMessage.textContent =
             error.message ||
             "The search request failed.";
 
-        show(errorState);
+
+        show(
+            errorState
+        );
+
 
         resultsMeta.textContent =
             "Search failed";
     }
 }
 
-
-/* =================================
-   SEARCH FORM
-================================= */
 
 searchForm.addEventListener(
     "submit",
@@ -398,20 +471,21 @@ searchForm.addEventListener(
 );
 
 
-/* =================================
-   INPUT
-================================= */
-
 searchInput.addEventListener(
     "input",
     () => {
         if (
-            searchInput.value.length > 0
+            searchInput.value.length >
+            0
         ) {
-            show(clearButton);
+            show(
+                clearButton
+            );
 
         } else {
-            hide(clearButton);
+            hide(
+                clearButton
+            );
         }
     }
 );
@@ -423,23 +497,25 @@ clearButton.addEventListener(
         searchInput.value =
             "";
 
-        hide(clearButton);
+        hide(
+            clearButton
+        );
 
         searchInput.focus();
     }
 );
 
 
-/* =================================
-   NEW SEARCH
-================================= */
-
 newSearchButton.addEventListener(
     "click",
     () => {
-        hide(resultsSection);
+        hide(
+            resultsSection
+        );
 
-        show(homeSection);
+        show(
+            homeSection
+        );
 
         searchInput.value =
             "";
@@ -451,24 +527,16 @@ newSearchButton.addEventListener(
 
         currentPage =
             1;
-
-        window.scrollTo({
-            top: 0,
-            behavior: "smooth"
-        });
     }
 );
 
-
-/* =================================
-   PAGINATION
-================================= */
 
 previousPage.addEventListener(
     "click",
     () => {
         if (
-            currentPage > 1
+            currentPage >
+            1
         ) {
             performSearch(
                 currentQuery,
@@ -490,10 +558,6 @@ nextPage.addEventListener(
 );
 
 
-/* =================================
-   RETRY
-================================= */
-
 retryButton.addEventListener(
     "click",
     () => {
@@ -504,10 +568,6 @@ retryButton.addEventListener(
     }
 );
 
-
-/* =================================
-   QUICK SEARCHES
-================================= */
 
 quickSearchButtons.forEach(
     button => {
@@ -520,7 +580,9 @@ quickSearchButtons.forEach(
                 searchInput.value =
                     query;
 
-                show(clearButton);
+                show(
+                    clearButton
+                );
 
                 performSearch(
                     query,
