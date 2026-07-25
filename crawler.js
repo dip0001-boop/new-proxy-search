@@ -868,7 +868,7 @@ async function startCrawler() {
     }
 
 
-    crawlerState.start();
+   crawlerState.start(WORKER_COUNT);
 
 
     try {
