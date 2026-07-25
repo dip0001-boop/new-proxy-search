@@ -1,193 +1,217 @@
-const axios =
-    require("axios");
-
-const cheerio =
-    require("cheerio");
+const database =
+    require("./database");
 
 const config =
     require("./config");
 
 
-const USER_AGENT =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36";
-
-
-const searchClient =
-    axios.create({
-
-        timeout:
-            config.search.requestTimeout,
-
-        maxContentLength:
-            config.search.maxResponseSize,
-
-        maxBodyLength:
-            config.search.maxResponseSize,
-
-        headers: {
-
-            "User-Agent":
-                USER_AGENT,
-
-            "Accept":
-                "text/html,application/xhtml+xml",
-
-            "Accept-Language":
-                "en-US,en;q=0.9",
-
-            "Accept-Encoding":
-                "gzip, deflate, br"
-
-        },
-
-        validateStatus:
-            status =>
-                status >= 200 &&
-                status < 400
-
-    });
-
-
 function cleanText(
     value
 ) {
-
     return String(
         value ||
         ""
     )
-
         .replace(
             /\s+/g,
             " "
         )
-
         .trim();
-
 }
 
 
-function decodeSearchURL(
-    rawURL
+function getSearchLimit(
+    options
 ) {
+    const requested =
+        Number(
+            options.limit
+        );
 
-    try {
 
-        let url =
-            String(
-                rawURL ||
+    const defaultLimit =
+        Number(
+            config.search.resultsPerPage
+        ) || 10;
+
+
+    const maxLimit =
+        Number(
+            config.search.maxResults
+        ) || 100;
+
+
+    return Math.min(
+
+        Math.max(
+
+            Number.isFinite(
+                requested
+            )
+
+                ? requested
+
+                : defaultLimit,
+
+            1
+
+        ),
+
+        maxLimit
+
+    );
+}
+
+
+function getSearchPage(
+    options
+) {
+    const page =
+        Number(
+            options.page
+        );
+
+
+    return Math.max(
+
+        Number.isFinite(
+            page
+        )
+
+            ? Math.floor(
+                page
+            )
+
+            : 1,
+
+        1
+
+    );
+}
+
+
+function normaliseResult(
+    page
+) {
+    let source =
+        page.domain ||
+        "";
+
+
+    if (
+        !source
+    ) {
+        try {
+
+            source =
+                new URL(
+                    page.url
+                ).hostname;
+
+        } catch {
+
+            source =
+                "";
+
+        }
+    }
+
+
+    source =
+        source
+            .replace(
+                /^www\./i,
                 ""
             );
 
 
-        if (
-            url.startsWith(
-                "//"
-            )
-        ) {
+    return {
 
-            url =
-                "https:" +
-                url;
-
-        }
-
-
-        const parsed =
-            new URL(
-                url,
-                "https://html.duckduckgo.com"
-            );
-
-
-        const encoded =
-            parsed.searchParams.get(
-                "uddg"
-            );
-
-
-        if (
-            encoded
-        ) {
-
-            return decodeURIComponent(
-                encoded
-            );
-
-        }
-
-
-        return parsed.toString();
-
-    } catch {
-
-        return null;
-
-    }
-
-}
-
-
-function getSearchOffset(
-    page
-) {
-
-    return (
-
-        Math.max(
-            Number(
-                page
+        title:
+            cleanText(
+                page.title
             ) ||
-            1,
 
-            1
+            "Untitled page",
 
-        ) -
 
-        1
+        link:
+            page.url,
 
-    ) *
 
-    30;
+        snippet:
+            cleanText(
+                page.description
+            ) ||
 
+            cleanText(
+                page.content
+            )
+                .slice(
+                    0,
+                    300
+                ) ||
+
+            "No description available.",
+
+
+        source,
+
+
+        relevance:
+            Number(
+                page.relevance
+            ) || 0,
+
+
+        crawledAt:
+            page.crawled_at
+
+    };
 }
 
 
-function validTargetURL(
-    value
+function removeDuplicateURLs(
+    results
 ) {
+    const seen =
+        new Set();
 
-    try {
 
-        const parsed =
-            new URL(
-                value
+    return results.filter(
+
+        result => {
+
+            const url =
+                String(
+                    result.link
+                )
+                    .trim()
+                    .toLowerCase();
+
+
+            if (
+                !url ||
+                seen.has(
+                    url
+                )
+            ) {
+
+                return false;
+
+            }
+
+
+            seen.add(
+                url
             );
 
 
-        if (
-
-            parsed.protocol !==
-                "http:" &&
-
-            parsed.protocol !==
-                "https:"
-
-        ) {
-
-            return null;
+            return true;
 
         }
 
-
-        return parsed;
-
-    } catch {
-
-        return null;
-
-    }
-
+    );
 }
 
 
@@ -195,184 +219,85 @@ async function search(
     query,
     options = {}
 ) {
+    const cleanQuery =
+        cleanText(
+            query
+        );
+
+
+    if (
+        !cleanQuery
+    ) {
+
+        return {
+
+            provider:
+                "THE VAULT INDEX",
+
+            results:
+                [],
+
+            total:
+                0
+
+        };
+
+    }
+
 
     const limit =
-        Math.min(
-
-            Math.max(
-
-                Number(
-                    options.limit
-                ) ||
-                10,
-
-                1
-
-            ),
-
-            config.search.maxResults
-
+        getSearchLimit(
+            options
         );
 
 
     const page =
-        Math.max(
+        getSearchPage(
+            options
+        );
 
-            Number(
-                options.page
-            ) ||
-            1,
 
+    const offset =
+        (
+
+            page -
             1
 
-        );
+        ) *
+
+        limit;
 
 
-    const searchURL =
-        "https://html.duckduckgo.com/html/?" +
+    const indexedPages =
+        database.searchPages(
 
-        new URLSearchParams({
+            cleanQuery,
 
-            q:
-                query,
+            limit,
 
-            s:
-                String(
-                    getSearchOffset(
-                        page
-                    )
-                )
+            offset
 
-        });
-
-
-    const response =
-        await searchClient.get(
-            searchURL
-        );
-
-
-    const $ =
-        cheerio.load(
-            response.data
         );
 
 
     const results =
-        [];
+        removeDuplicateURLs(
 
+            indexedPages.map(
 
-    $(".result").each(
+                normaliseResult
 
-        (
-            _,
-            element
-        ) => {
+            )
 
-            if (
-
-                results.length >=
-                limit
-
-            ) {
-
-                return;
-
-            }
-
-
-            const titleElement =
-                $(element)
-                    .find(
-                        ".result__a"
-                    )
-                    .first();
-
-
-            const snippetElement =
-                $(element)
-                    .find(
-                        ".result__snippet"
-                    )
-                    .first();
-
-
-            const rawURL =
-                titleElement.attr(
-                    "href"
-                );
-
-
-            if (
-                !rawURL
-            ) {
-
-                return;
-
-            }
-
-
-            const link =
-                decodeSearchURL(
-                    rawURL
-                );
-
-
-            const target =
-                validTargetURL(
-                    link
-                );
-
-
-            if (
-                !target
-            ) {
-
-                return;
-
-            }
-
-
-            results.push({
-
-                title:
-                    cleanText(
-                        titleElement.text()
-                    ) ||
-
-                    "Untitled result",
-
-
-                link:
-                    target.toString(),
-
-
-                snippet:
-                    cleanText(
-                        snippetElement.text()
-                    ) ||
-
-                    "No description available.",
-
-
-                source:
-                    target.hostname
-
-            });
-
-        }
-
-    );
+        );
 
 
     return {
 
         provider:
-            "LIVE WEB SEARCH",
-
+            "THE VAULT INDEX",
 
         results,
-
 
         total:
             results.length
